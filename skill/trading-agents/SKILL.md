@@ -14,7 +14,7 @@ This skill drives the `ta-claude` CLI from https://github.com/abisinan56-cmyk/tr
 - Check data access: `python -c "import yfinance as y; print(len(y.Ticker('SPY').history(period='5d')))"` must print a number above 0.
 - The key must be in `.env` or the environment. If it is missing, ask the user to add it to `.env` themselves. Never ask for the key in chat, and never write it anywhere.
 
-**Chat mode (no API key, no shell)** is for a claude.ai chat or any session where the CLI can't run. You run the TradingAgents workflow yourself as a single model, with data from the browser and web search. It works for every market on Yahoo; for ADX, use the screen read only. Label the result "**Chat-mode TradingAgents (single model, not the ta-claude CLI)**". Mention the CLI command for the full multi-agent run once, briefly, and don't repeat it.
+**Chat mode (no API key, no shell)** is for a claude.ai chat or any session where the CLI can't run. You run the TradingAgents workflow yourself as a single model, with data from the Twelve Data connector when it is connected (otherwise Yahoo through the browser) and news from web search. It works for every market on Yahoo; for ADX, use the screen read only. Label the result "**Chat-mode TradingAgents (single model, not the ta-claude CLI)**". Mention the CLI command for the full multi-agent run once, briefly, and don't repeat it.
 
 ### Speed rules (always, in any mode)
 - **No screenshots.** Read pages as text or JSON (`get_page_text`, `javascript_exec`, `find`). Take a screenshot only if text extraction fails, and then once, at scale 0.5.
@@ -24,7 +24,14 @@ This skill drives the `ta-claude` CLI from https://github.com/abisinan56-cmyk/tr
 - **Budget:** about 4 tool calls for one analysis. Don't narrate between calls.
 
 ### Chat-mode steps
-1. **Prices and indicators: one `browser_batch`.** Navigate to `https://query1.finance.yahoo.com/v8/finance/chart/<YAHOO_SYMBOL>?range=1y&interval=1d`, then run this with `javascript_exec`:
+1. **Prices and indicators.** Pick the first source that works:
+   - **Twelve Data connector** (preferred when its tools are in the session):
+     - Call its auth/status tool once per session. If it isn't signed in, tell the user to finish connecting it in claude.ai, then use Yahoo below.
+     - Fetch about 260 daily bars with its time-series tool, plus the current price with its quote tool. Use its indicator tools (RSI, MACD, SMA, ATR, BBANDS) only if they save calls; otherwise compute from the bars with the same formulas as the snippet below.
+     - Symbol formats: `EUR/USD`, `BTC/USD`, `AAPL`. For DFM, NSE or anything else, try its symbol-search tool first.
+     - The free plan has rate and credit limits. If a call is refused for limits or the market isn't covered, fall back to Yahoo, and say which source each number came from.
+     - Keep it to 2–3 connector calls per analysis.
+   - **Yahoo through the browser:** one `browser_batch`. Navigate to `https://query1.finance.yahoo.com/v8/finance/chart/<YAHOO_SYMBOL>?range=1y&interval=1d`, then run this with `javascript_exec`:
 ```js
 (() => { const j=JSON.parse(document.body.innerText).chart.result[0], q=j.indicators.quote[0], m=j.meta;
  const R=j.timestamp.map((t,i)=>({t,h:q.high[i],l:q.low[i],c:q.close[i]})).filter(r=>r.c!=null&&r.h!=null&&r.l!=null);
@@ -41,7 +48,7 @@ This skill drives the `ta-claude` CLI from https://github.com/abisinan56-cmyk/tr
   sma20:f(s20),sma50:f(sma(50)),sma200:f(sma(200)),rsi14:f(l?100-100/(1+g/l):100,1),macd_hist:f(md[n-1]-sg[n-1]),macd_hist_prev:f(md[n-2]-sg[n-2]),
   atr_pct:f(atr/L*100,2),boll:[f(s20-2*sd),f(s20+2*sd)],ret_pct:{w1:f(ret(5),2),m1:f(ret(21),2),m3:f(ret(63),2)},hi52:f(hi),lo52:f(lo)}) })()
 ```
-   For a **live read** in chat mode, add `get_page_text` on the user's tab to the same batch. Also fetch `...?range=1d&interval=1m` and, from its `meta`, compute what `ta-claude live` computes:
+   For a **live read** in chat mode, add `get_page_text` on the user's tab to the same batch. For the reference price, use the Twelve Data quote if connected; otherwise fetch Yahoo's `...?range=1d&interval=1m` and, from its `meta`, compute what `ta-claude live` computes:
    - screen vs Yahoo % = (screen / `regularMarketPrice` − 1) × 100;
    - Yahoo lag in minutes = the time you read the screen − `regularMarketTime`;
    - session move % = (screen / `chartPreviousClose` − 1) × 100;
