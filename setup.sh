@@ -21,7 +21,7 @@ done
 if [ -z "$PY" ]; then
   if command -v uv >/dev/null 2>&1; then
     say "No Python 3.11+ found; using uv to provide Python 3.13"
-    uv venv --python 3.13 "$VENV"
+    uv venv --seed --python 3.13 "$VENV"
   else
     say "Python 3.11 or newer is required."
     echo "Install it with ONE of:"
