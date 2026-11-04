@@ -87,7 +87,7 @@ def test_cli_live(monkeypatch, capsys, tmp_path):
     out = json.loads(capsys.readouterr().out)
     assert out["symbol"] == "EMAAR.AE" and out["screen_vs_yahoo_pct"] == 0 and out["fresh_run"] is None
     monkeypatch.delenv("ANTHROPIC_API_KEY", raising=False)
-    monkeypatch.setattr(cli, "load_dotenv", lambda: None)
+    monkeypatch.setattr(cli, "load_dotenv", lambda *a, **k: None)
     assert cli.main(["live", "EMAAR.AE", "--price", "12.3", "--full"]) == 2
 
 
@@ -97,3 +97,20 @@ def test_adx_refused_for_agent_runs(tmp_path):
         runner.run_report("FAB.AD", "2026-11-04", cfg, use_replay=False)
     with pytest.raises(ValueError, match="not on Yahoo"):
         runner.run_backtest_job(["NVDA", "FAB.AD"], "2026-07-06", "2026-07-20", 7, cfg)
+
+
+def test_stale_screen_is_flagged():
+    # Real case found in testing: Yahoo's CHF/ZAR page showed "As of 16:47 GMT"
+    # while its own feed was at 19:27 GMT.
+    q = LiveQuote("CHFZAR", 20.0815, captured_at="2026-11-04T19:28:00+00:00",
+                  screen_time="2026-11-04T16:47:28+00:00")
+    chk = assess(q, _intraday(20.0744, "2026-11-04T19:27:26+00:00", 20.2234), None)
+    assert chk.screen_age_minutes == pytest.approx(160.5, abs=0.1)
+    assert any("min old" in f and "not live" in f for f in chk.flags)
+    assert chk.yahoo_lag_minutes == pytest.approx(0.6, abs=0.1)
+
+
+def test_negative_lag_flags_bad_capture_time():
+    q = LiveQuote("CHFZAR", 20.08, captured_at="2026-11-04T16:47:28+00:00")
+    chk = assess(q, _intraday(20.0744, "2026-11-04T19:27:26+00:00", 20.2234), None)
+    assert any("newer than the read time" in f for f in chk.flags)

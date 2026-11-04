@@ -59,7 +59,8 @@ Live mode is read-only. Never click Buy, Sell or order buttons, never place or m
    - Map it to the Yahoo form (for example, TradingView `DFM:EMAAR` becomes `EMAAR.AE`, and `FX:EURUSD` becomes `EURUSD`).
    - Also note visible headlines or key levels, labelled as coming from the page.
 3. **Write `quote.json`** in the working directory:
-   `{"symbol": "...", "price": 0, "change_pct": 0, "currency": "...", "source": "<url or app>", "captured_at": "<now, ISO with timezone>"}`
+   `{"symbol": "...", "price": 0, "change_pct": 0, "currency": "...", "source": "<url or app>", "captured_at": "<the time you read it, ISO with timezone>", "screen_time": "<the page's own 'as of' time, ISO, if shown>"}`
+   - `captured_at` is when you read the screen, never the page's timestamp. The page's timestamp goes in `screen_time`; that is how a stale page gets caught.
 4. **Quick check** (seconds, no API cost): `ta-claude live <T> --quote quote.json --json`.
 5. **Fresh analysis**, only when asked for one (or when the flags say there is no rating, or it is more than a day old) and the user says yes:
    - Run `ta-claude live <T> --quote quote.json --full --json`. This takes several minutes and costs API usage.

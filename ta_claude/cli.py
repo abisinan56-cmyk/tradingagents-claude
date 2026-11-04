@@ -6,6 +6,7 @@ import json
 import os
 import sys
 from dataclasses import asdict
+from pathlib import Path
 from datetime import date
 
 from dotenv import load_dotenv
@@ -33,7 +34,8 @@ def main(argv: list[str] | None = None) -> int:
 
 
 def _main(argv: list[str] | None = None) -> int:
-    load_dotenv()
+    load_dotenv()  # .env in the current folder wins
+    load_dotenv(Path(__file__).resolve().parents[1] / ".env")  # then the repo's own .env
     ap = argparse.ArgumentParser(prog="ta-claude", description=__doc__)
     sub = ap.add_subparsers(dest="cmd", required=True)
 
@@ -63,7 +65,7 @@ def _main(argv: list[str] | None = None) -> int:
     lv = sub.add_parser("live", help="Check a price read off your screen against Yahoo and the last rating")
     lv.add_argument("ticker")
     src = lv.add_mutually_exclusive_group(required=True)
-    src.add_argument("--quote", help="JSON file: symbol, price, source, captured_at, change_pct, currency")
+    src.add_argument("--quote", help="JSON file: symbol, price, source, captured_at, screen_time, change_pct, currency")
     src.add_argument("--price", type=float, help="Screen price, if no quote file")
     lv.add_argument("--source", default="", help="Where the price was read (URL or app)")
     lv.add_argument("--full", action="store_true", help="Also run a fresh multi-agent analysis (minutes, costs API)")
@@ -156,7 +158,8 @@ def _live(args) -> int:
         print(f"{check.symbol} screen {quote.price} ({quote.source or 'screen'})")
         if check.yahoo:
             print(f"Yahoo last {check.yahoo['last']} at {check.yahoo['last_bar']} · "
-                  f"screen vs Yahoo {check.screen_vs_yahoo_pct:+.2f}% · session {check.session_move_pct}%")
+                  f"screen vs Yahoo {check.screen_vs_yahoo_pct:+.2f}% · Yahoo lag "
+                  f"{check.yahoo_lag_minutes} min · session {check.session_move_pct}%")
         if fresh:
             print(f"Fresh rating: {fresh['rating']} · report {fresh['report_dir']}")
         elif check.last_rating:

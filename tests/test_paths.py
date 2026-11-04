@@ -147,7 +147,7 @@ def test_cli_paths(monkeypatch, capsys, tmp_path):
     assert json.loads(capsys.readouterr().out)["log"] == "/log"
     assert cli.main(["market", "EURUSD"]) == 0
     monkeypatch.delenv("ANTHROPIC_API_KEY")
-    monkeypatch.setattr(cli, "load_dotenv", lambda: None)
+    monkeypatch.setattr(cli, "load_dotenv", lambda *a, **k: None)
     assert cli.main(["report", "NVDA"]) == 2
 
 

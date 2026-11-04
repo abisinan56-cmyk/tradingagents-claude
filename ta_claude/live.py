@@ -25,6 +25,7 @@ class LiveQuote:
     captured_at: str = ""            # ISO time the screen was read; defaults to now
     change_pct: float | None = None  # as shown on screen, e.g. -1.2 for -1.2%
     currency: str | None = None
+    screen_time: str = ""            # the page's own "as of" timestamp, if it shows one
 
     @classmethod
     def load(cls, path: str) -> "LiveQuote":
@@ -32,10 +33,15 @@ class LiveQuote:
         return cls(**{k: data[k] for k in cls.__dataclass_fields__ if k in data})
 
     def captured(self) -> datetime:
-        if self.captured_at:
-            t = datetime.fromisoformat(self.captured_at.replace("Z", "+00:00"))
-            return t if t.tzinfo else t.replace(tzinfo=timezone.utc)
-        return datetime.now(timezone.utc)
+        return _parse(self.captured_at) if self.captured_at else datetime.now(timezone.utc)
+
+    def shown(self) -> datetime | None:
+        return _parse(self.screen_time) if self.screen_time else None
+
+
+def _parse(text: str) -> datetime:
+    t = datetime.fromisoformat(text.replace("Z", "+00:00"))
+    return t if t.tzinfo else t.replace(tzinfo=timezone.utc)
 
 
 @dataclass
@@ -92,6 +98,7 @@ class LiveCheck:
     screen_vs_yahoo_pct: float | None = None
     yahoo_lag_minutes: float | None = None
     session_move_pct: float | None = None
+    screen_age_minutes: float | None = None
     rating_age_days: int | None = None
     flags: list[str] = field(default_factory=list)
 
@@ -101,6 +108,12 @@ def assess(quote: LiveQuote, intraday: Intraday | None, last: dict | None,
     m = classify(quote.symbol)
     chk = LiveCheck(m.symbol, m.name, asdict(quote), asdict(intraday) if intraday else None, last,
                     flags=list(warnings or m.warnings))
+    shown = quote.shown()
+    if shown:
+        chk.screen_age_minutes = round((quote.captured() - shown).total_seconds() / 60, 1)
+        if chk.screen_age_minutes > 20:
+            chk.flags.append(f"Your screen's quote is {chk.screen_age_minutes:.0f} min old (page shows "
+                             f"{quote.screen_time}); it is not live.")
     if intraday:
         chk.screen_vs_yahoo_pct = round((quote.price / intraday.last - 1) * 100, 3)
         lag = (quote.captured() - datetime.fromisoformat(intraday.last_bar)).total_seconds() / 60
@@ -110,7 +123,10 @@ def assess(quote: LiveQuote, intraday: Intraday | None, last: dict | None,
         if abs(chk.screen_vs_yahoo_pct) > 0.5:
             chk.flags.append(f"Screen price differs from Yahoo by {chk.screen_vs_yahoo_pct:+.2f}%: "
                              "the agents see Yahoo's (likely delayed) feed, not your screen.")
-        if lag > 20:
+        if lag < -5:
+            chk.flags.append(f"Yahoo's latest bar is {-lag:.0f} min newer than the read time: "
+                             "check that captured_at is the time you read the screen.")
+        elif lag > 20:
             chk.flags.append(f"Yahoo's latest bar is {lag:.0f} min older than your screen read "
                              "(delayed feed or market closed).")
     else:

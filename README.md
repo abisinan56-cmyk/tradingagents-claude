@@ -33,13 +33,23 @@ Before running, check a ticker's classification with `ta-claude market EMAAR.AE,
 
 ## Install
 
+macOS or Linux, one step:
+
 ```bash
-git clone <this repo> && cd <repo>
-python -m venv .venv && source .venv/bin/activate   # Windows: .venv\Scripts\activate
-pip install -e ".[test]"
-cp .env.example .env    # add ANTHROPIC_API_KEY
-pytest -q               # offline tests, no key needed
+git clone https://github.com/abisinan56-cmyk/tradingagents-claude && cd tradingagents-claude
+./setup.sh
 ```
+
+The script:
+1. finds Python 3.11 or newer and creates `.venv`;
+2. installs ta-claude and runs the offline tests;
+3. installs the Claude Code skill to `~/.claude/skills/trading-agents`;
+4. puts `ta-claude` on your PATH;
+5. creates `.env`, where you paste your `ANTHROPIC_API_KEY`.
+
+`ta-claude` reads that `.env` from any folder.
+
+To install by hand instead: `python -m venv .venv && .venv/bin/pip install -e ".[test]" && cp .env.example .env`.
 
 ## Use
 
