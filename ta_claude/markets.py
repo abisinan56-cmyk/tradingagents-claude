@@ -43,7 +43,13 @@ def classify(ticker: str) -> Market:
     if up.endswith("-USD") or up.endswith("-USDT"):
         return Market("crypto", sym, "crypto", ["market", "social", "news"], False)
 
-    if up.endswith(".AE") or up.endswith(".AD"):
+    if up.endswith(".AD") or up.endswith(".ADX"):
+        return Market("uae-adx", sym, "stock", [], False, [
+            "Abu Dhabi (ADX) stocks are not on Yahoo Finance, so the agents have no data for them. "
+            "Use live mode on an ADX page for a screen-based read instead.",
+        ])
+
+    if up.endswith(".AE"):
         return Market("uae", sym, "stock", ["market", "news", "fundamentals"], False, [
             "UAE fundamentals come from Yahoo and are withheld on past-dated runs; "
             "backtests rely on price and news only.",

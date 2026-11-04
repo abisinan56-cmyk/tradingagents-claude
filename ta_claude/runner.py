@@ -1,6 +1,7 @@
 """The four jobs: report, ensemble, backtest, and (via --portfolio) portfolio-aware runs."""
 from __future__ import annotations
 
+import hashlib
 import json
 import random
 import shutil
@@ -30,25 +31,64 @@ def load_portfolio(path: str | None) -> PortfolioContext | None:
     return PortfolioContext.model_validate(json.loads(Path(path).read_text(encoding="utf-8")))
 
 
-def _replay_ctx(enabled: bool, market: Market, date: str, cfg: dict):
-    if not enabled:
-        return nullcontext()
-    name = f"{market.symbol}_{date}_{cfg['quick_think_llm']}_{cfg['deep_think_llm']}.db".replace("/", "_")
-    return replay(HOME / "replay" / name)
+def _replay_path(market: Market, date: str, cfg: dict, analysts: list[str], portfolio: str | None) -> Path:
+    """One recording per ticker, date and every setting that changes the prompts."""
+    pf = Path(portfolio).read_text(encoding="utf-8") if portfolio else ""
+    settings = [cfg[k] for k in ("quick_think_llm", "deep_think_llm", "max_debate_rounds",
+                                 "max_risk_discuss_rounds", "temperature", "anthropic_effort",
+                                 "output_language")]
+    digest = hashlib.sha256(json.dumps([sorted(analysts), settings, pf], default=str).encode()).hexdigest()[:12]
+    safe = "".join(c if c.isalnum() or c in ".-=" else "_" for c in market.symbol)
+    return HOME / "replay" / f"{safe}_{date}_{digest}.db"
+
+
+def _require_data(market: Market) -> None:
+    if not market.analysts:
+        raise ValueError(" ".join(market.warnings) or f"No data source for {market.symbol}.")
 
 
 # --------------------------------------------------------------------------- report
 def run_report(ticker: str, date: str, cfg: dict, analysts: list[str] | None = None,
                portfolio: str | None = None, use_replay: bool = True, html: bool = True) -> dict:
+    """Run one analysis. With replay, the first run records and later runs replay it.
+
+    The prompts include lessons read from the memory log, so the log is snapshotted
+    as it stood before the first run; replays read that snapshot (via a throwaway
+    copy) and do not write to the real log again.
+    """
     market = classify(ticker)
+    _require_data(market)
     analysts = analysts or market.analysts
-    with _replay_ctx(use_replay, market, date, cfg):
-        graph = TradingAgentsGraph(analysts, config=cfg)
-        state, rating = graph.propagate(market.symbol, date, market.asset_type,
-                                        portfolio=load_portfolio(portfolio))
-        path = graph.save_reports(state, market.symbol, html=html)
+    replayed, ctx, run_cfg, tmp = False, nullcontext(), cfg, None
+    if use_replay:
+        db = _replay_path(market, date, cfg, analysts, portfolio)
+        snapshot = db.with_suffix(".memory.md")
+        main_log = Path(cfg["memory_log_path"])
+        done = db.with_suffix(".done")  # written only after a recording completes
+        replayed = done.exists() and snapshot.exists()
+        db.parent.mkdir(parents=True, exist_ok=True)
+        if replayed:
+            tmp = Path(tempfile.mkdtemp(prefix="ta-replay-"))
+            shutil.copy(snapshot, tmp / "memory.md")
+            run_cfg = {**cfg, "memory_log_path": str(tmp / "memory.md")}
+        elif not snapshot.exists():  # a crashed first run keeps its snapshot and partial cache
+            snapshot.write_text(main_log.read_text(encoding="utf-8") if main_log.exists() else "",
+                                encoding="utf-8")
+        ctx = replay(db)
+    try:
+        with ctx:
+            graph = TradingAgentsGraph(analysts, config=run_cfg)
+            state, rating = graph.propagate(market.symbol, date, market.asset_type,
+                                            portfolio=load_portfolio(portfolio))
+            path = graph.save_reports(state, market.symbol, html=html)
+        if use_replay and not replayed:
+            done.write_text(rating, encoding="utf-8")
+    finally:
+        if tmp:
+            shutil.rmtree(tmp, ignore_errors=True)
     return {"ticker": market.symbol, "market": market.name, "date": date, "rating": rating,
-            "report_dir": str(path), "analysts": analysts, "warnings": market.warnings}
+            "report_dir": str(path), "analysts": analysts, "replayed": replayed,
+            "warnings": market.warnings}
 
 
 # ------------------------------------------------------------------------- ensemble
@@ -77,6 +117,7 @@ def run_ensemble(ticker: str, date: str, cfg: dict, n: int = 5, analysts: list[s
     answers would make every member agree by construction.
     """
     market = classify(ticker)
+    _require_data(market)
     analysts = analysts or market.analysts
     pf = load_portfolio(portfolio)
     main = TradingAgentsGraph(analysts, config=cfg)
@@ -204,6 +245,8 @@ def run_backtest_job(tickers: list[str], start: str, end: str, every: int, cfg: 
     notes = check_dates(dates, [cfg["quick_think_llm"], cfg["deep_think_llm"]], allow_contaminated)
 
     markets = [classify(t) for t in tickers]
+    for m in markets:
+        _require_data(m)
     by_pipeline: dict[tuple, list[Market]] = {}
     for m in markets:  # one sweep per (asset type, analyst set) the tickers need
         by_pipeline.setdefault((m.asset_type, tuple(backtest_analysts(m))), []).append(m)
@@ -212,7 +255,7 @@ def run_backtest_job(tickers: list[str], start: str, end: str, every: int, cfg: 
     logs, failures = [], []
     for (asset_type, analysts), group in by_pipeline.items():
         result = run_backtest([m.symbol for m in group], dates, cfg, asset_type=asset_type,
-                              portfolio=load_portfolio(portfolio), selected_analysts=analysts,
+                              portfolio=load_portfolio(portfolio), selected_analysts=list(analysts),
                               run_id=f"{run_id}_{asset_type}_{'-'.join(analysts)}", progress=progress)
         logs.append(result.log_path)
         failures += result.failures
@@ -220,8 +263,9 @@ def run_backtest_job(tickers: list[str], start: str, end: str, every: int, cfg: 
     merged = Path(cfg["results_dir"]) / "backtest" / f"{run_id}_merged.md"
     merged.parent.mkdir(parents=True, exist_ok=True)
     sep = TradingMemoryLog._SEPARATOR
-    merged.write_text(sep.join(p.read_text(encoding="utf-8").strip() for p in logs if p.exists()) + sep,
-                      encoding="utf-8")
+    entries = [e.strip() for p in logs if p.exists()
+               for e in p.read_text(encoding="utf-8").split(sep) if e.strip()]
+    merged.write_text(sep.join(entries) + sep if entries else "", encoding="utf-8")
 
     rep = score_log(merged, cost_bps)
     rep.notes = notes + [w for m in markets for w in m.warnings] + rep.notes

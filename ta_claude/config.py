@@ -15,8 +15,7 @@ DEFAULT_QUICK = "claude-sonnet-5"
 
 # Benchmarks the upstream map lacks. Alpha is computed against these.
 EXTRA_BENCHMARKS = {
-    ".AE": "UAE",       # UAE listings (DFM/ADX on Yahoo) -> iShares MSCI UAE ETF as proxy
-    ".AD": "UAE",
+    ".AE": "UAE",       # DFM listings on Yahoo -> iShares MSCI UAE ETF as proxy
     "=X": "DX-Y.NYB",   # spot FX pairs -> US Dollar Index; read raw return alongside alpha
 }
 

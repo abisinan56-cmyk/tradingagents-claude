@@ -69,29 +69,51 @@ class SQLiteLLMCache(BaseCache):
         self.store.clear()
 
 
-@contextmanager
-def replay(path: str | Path):
-    """Enable record-and-replay for the duration of the block."""
-    import tradingagents.agents.tools as tools_mod
+# Every place the agents fetch outside data reaches it through one of these names.
+# Patched where they are looked up (the importing module), not where defined.
+DATA_ENTRY_POINTS = (
+    ("tradingagents.agents.tools", "route_to_vendor"),                  # all vendor tools
+    ("tradingagents.agents.tools", "build_verified_market_snapshot"),   # market analyst's price check
+    ("tradingagents.agents.analysts.sentiment_analyst", "fetch_reddit_posts"),
+    ("tradingagents.agents.analysts.sentiment_analyst", "fetch_stocktwits_messages"),
+    ("tradingagents.agents.context", "get_company_profile"),            # instrument identity
+)
 
-    store = _Store(Path(path))
-    original_route = tools_mod.route_to_vendor
-    previous_cache = get_llm_cache()
 
-    def cached_route(method: str, *args, **kwargs):
-        key = "data:" + _key(method, args, kwargs)
+def _cached(store: _Store, name: str, fn):
+    def wrapper(*args, **kwargs):
+        key = "data:" + _key(name, args, kwargs)
         hit = store.get(key)
         if hit is not None:
             return json.loads(hit)
-        result = original_route(method, *args, **kwargs)
-        if isinstance(result, str):  # vendor tools return text; only cache that
-            store.put(key, json.dumps(result))
+        result = fn(*args, **kwargs)
+        try:  # cache only what round-trips through JSON unchanged
+            encoded = json.dumps(result)
+            if json.loads(encoded) == result:
+                store.put(key, encoded)
+        except (TypeError, ValueError):
+            pass
         return result
+    return wrapper
 
-    tools_mod.route_to_vendor = cached_route
+
+@contextmanager
+def replay(path: str | Path):
+    """Enable record-and-replay for the duration of the block."""
+    import importlib
+
+    store = _Store(Path(path))
+    patched = []
+    for module_name, attr in DATA_ENTRY_POINTS:
+        module = importlib.import_module(module_name)
+        original = getattr(module, attr)
+        setattr(module, attr, _cached(store, f"{module_name}.{attr}", original))
+        patched.append((module, attr, original))
+    previous_cache = get_llm_cache()
     set_llm_cache(SQLiteLLMCache(store))
     try:
         yield store
     finally:
-        tools_mod.route_to_vendor = original_route
+        for module, attr, original in patched:
+            setattr(module, attr, original)
         set_llm_cache(previous_cache)
