@@ -1,0 +1,23 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "ta-claude"
+version = "0.1.0"
+description = "TradingAgents on Claude with replay, ensembles and honest backtests"
+requires-python = ">=3.11"
+dependencies = [
+    # Pinned to the commit this wrapper was built and tested against.
+    "tradingagents @ git+https://github.com/TauricResearch/TradingAgents@9fa1196fffbcfd9de5146d2dd2869df84ab99838",
+    "python-dotenv>=1.0",
+]
+
+[project.optional-dependencies]
+test = ["pytest>=8"]
+
+[project.scripts]
+ta-claude = "ta_claude.cli:main"
+
+[tool.setuptools]
+packages = ["ta_claude"]

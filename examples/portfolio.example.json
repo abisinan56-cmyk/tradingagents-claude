@@ -1,0 +1,8 @@
+{
+  "cash": 50000.0,
+  "currency": "USD",
+  "positions": [
+    {"ticker": "NVDA", "quantity": 40, "average_price": 152.0},
+    {"ticker": "EMAAR.AE", "quantity": 2000, "average_price": 13.1}
+  ]
+}
