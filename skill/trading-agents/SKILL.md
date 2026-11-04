@@ -24,13 +24,13 @@ This skill drives the `ta-claude` CLI from https://github.com/abisinan56-cmyk/tr
 - **Budget:** about 4 tool calls for one analysis. Don't narrate between calls.
 
 ### Chat-mode steps
-1. **Prices and indicators.** Pick the first source that works:
-   - **Twelve Data connector** (preferred when its tools are in the session):
-     - Call its auth/status tool once per session. If it isn't signed in, tell the user to finish connecting it in claude.ai, then use Yahoo below.
-     - Fetch about 260 daily bars with its time-series tool, plus the current price with its quote tool. Use its indicator tools (RSI, MACD, SMA, ATR, BBANDS) only if they save calls; otherwise compute from the bars with the same formulas as the snippet below.
-     - Symbol formats: `EUR/USD`, `BTC/USD`, `AAPL`. For DFM, NSE or anything else, try its symbol-search tool first.
-     - The free plan has rate and credit limits. If a call is refused for limits or the market isn't covered, fall back to Yahoo, and say which source each number came from.
-     - Keep it to 2–3 connector calls per analysis.
+1. **Prices and indicators.** Keep credit use low: Twelve Data's free plan has a daily limit and a small per-minute cap.
+   - **Live price: Twelve Data `get_quote`**, if the connector is present. It costs 1 credit and is the freshest source. Symbol formats: `EUR/USD`, `BTC/USD`, `AAPL`.
+   - **History and indicators: Yahoo through the browser**, which is free (snippet below).
+   - Use Twelve Data's indicator or time-series tools only when the browser is unavailable or Yahoo lacks the symbol. Then fetch only what's needed: RSI, MACD, BBANDS, ATR, SMA50 and SMA200 at outputsize 1–2, about 6 credits, in one parallel round.
+   - If a Twelve Data call is refused for limits, fall back to Yahoo. Say which source each number came from.
+   - If the two sources differ on an indicator (their daily forex bars can differ), say so in one line.
+   - Check `get_api_usage` only when the user asks or a call fails.
    - **Yahoo through the browser:** one `browser_batch`. Navigate to `https://query1.finance.yahoo.com/v8/finance/chart/<YAHOO_SYMBOL>?range=1y&interval=1d`, then run this with `javascript_exec`:
 ```js
 (() => { const j=JSON.parse(document.body.innerText).chart.result[0], q=j.indicators.quote[0], m=j.meta;
