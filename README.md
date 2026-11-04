@@ -132,7 +132,7 @@ Start with one ticker and `--every 14`. Check your Anthropic console after the f
 
 `skill/trading-agents/SKILL.md` lets Claude run this project for you from plain requests.
 - **Claude Code on your computer:** full mode. It runs the CLI and reads your open stock pages for live mode.
-- **claude.ai:** browser-only mode. Live reads work through Claude in Chrome. For a full multi-agent run, Claude gives you the command to run on your machine, because the claude.ai sandbox can't reach Yahoo.
+- **claude.ai (no API key):** fast chat mode. Claude runs the TradingAgents roles itself: prices and indicators come from Yahoo through Claude in Chrome in one batched call, and news comes from web search. There are no screenshots, about 4 tool calls in all, and the result is labelled as single-model.
 
 To install in Claude Code, copy the folder to `~/.claude/skills/trading-agents/`. On claude.ai, upload the zipped folder under Settings → Capabilities → Skills.
 

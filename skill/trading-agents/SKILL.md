@@ -1,6 +1,6 @@
 ---
 name: trading-agents
-description: Run the ta-claude project (TradingAgents multi-agent analysis on Claude) for a US stock, DFM or Indian listing, crypto or FX pair - a single report, an ensemble vote with confidence, a look-ahead-safe backtest, a portfolio-aware run, or a LIVE read of the stock page or trading app the user has open. Use when the user asks to analyse a ticker or currency pair with TradingAgents, get a buy/sell rating, test the agents' track record, check a holding against their portfolio, or asks for a live update / "what's it doing now" on a chart they have open.
+description: Run TradingAgents multi-agent analysis on Claude (the ta-claude CLI, or a fast no-API-key chat mode using the browser and web search) for a US stock, DFM or Indian listing, crypto or FX pair - a single report, an ensemble vote with confidence, a look-ahead-safe backtest, a portfolio-aware run, or a LIVE read of the stock page or trading app the user has open. Use when the user asks to analyse a ticker or currency pair with TradingAgents, get a buy/sell rating, test the agents' track record, check a holding against their portfolio, or asks for a live update / "what's it doing now" on a chart they have open.
 ---
 
 # TradingAgents on Claude
@@ -14,13 +14,50 @@ This skill drives the `ta-claude` CLI from https://github.com/abisinan56-cmyk/tr
 - Check data access: `python -c "import yfinance as y; print(len(y.Ticker('SPY').history(period='5d')))"` must print a number above 0.
 - The key must be in `.env` or the environment. If it is missing, ask the user to add it to `.env` themselves. Never ask for the key in chat, and never write it anywhere.
 
-**Browser-only mode** applies when the shell can't reach Yahoo (for example the claude.ai cloud sandbox) or there is no key. Tell the user once that full multi-agent runs need their own machine, and give the exact command from section 1 to run there. Then still help:
-- **Live reads** (section 2) work fully. Fetch Yahoo's intraday data in the browser instead of through the CLI: `https://query1.finance.yahoo.com/v8/finance/chart/<SYMBOL>?range=1d&interval=1m`. From `meta`, read `regularMarketPrice`, `regularMarketTime` (epoch seconds), `previousClose`/`chartPreviousClose`, and the day high and low. Compute the same metrics as `ta-claude live`:
-  - screen vs Yahoo % = (screen / Yahoo last − 1) × 100;
-  - Yahoo lag in minutes = time the screen was read − `regularMarketTime`;
-  - session move % = (screen / previous close − 1) × 100.
-  Apply the same flags: divergence over 0.5%, lag over 20 minutes, and ADX not on Yahoo.
-- Give a clearly labelled **quick take** built only from what is on screen and in that data (trend on the day, position in the day's range, visible headlines). Never call it a TradingAgents rating.
+**Chat mode (no API key, no shell)** is for a claude.ai chat or any session where the CLI can't run. You run the TradingAgents workflow yourself as a single model, with data from the browser and web search. It works for every market on Yahoo; for ADX, use the screen read only. Label the result "**Chat-mode TradingAgents (single model, not the ta-claude CLI)**". Mention the CLI command for the full multi-agent run once, briefly, and don't repeat it.
+
+### Speed rules (always, in any mode)
+- **No screenshots.** Read pages as text or JSON (`get_page_text`, `javascript_exec`, `find`). Take a screenshot only if text extraction fails, and then once, at scale 0.5.
+- **Batch.** Put a whole browser sequence in one `browser_batch` call. Use one tab, reuse it for every ticker, and close it at the end.
+- **Don't browse news sites.** Use web search instead: at most 2 searches, plus at most 1 fetch of a dated article from this week. Ignore results older than 2 weeks.
+- **Never use computer use (screen control) for web pages.** Use it only for a desktop trading app, and then use the background app tools.
+- **Budget:** about 4 tool calls for one analysis. Don't narrate between calls.
+
+### Chat-mode steps
+1. **Prices and indicators: one `browser_batch`.** Navigate to `https://query1.finance.yahoo.com/v8/finance/chart/<YAHOO_SYMBOL>?range=1y&interval=1d`, then run this with `javascript_exec`:
+```js
+(() => { const j=JSON.parse(document.body.innerText).chart.result[0], q=j.indicators.quote[0], m=j.meta;
+ const R=j.timestamp.map((t,i)=>({t,h:q.high[i],l:q.low[i],c:q.close[i]})).filter(r=>r.c!=null&&r.h!=null&&r.l!=null);
+ const c=R.map(r=>r.c), n=c.length, L=c[n-1], sma=k=>n>=k?c.slice(n-k).reduce((a,b)=>a+b,0)/k:null;
+ const ema=(a,k)=>{const w=2/(k+1);let e=a[0];return a.map((v,i)=>i?(e=v*w+e*(1-w)):e)};
+ const e12=ema(c,12),e26=ema(c,26),md=e12.map((v,i)=>v-e26[i]),sg=ema(md,9);
+ let g=0,l=0;for(let i=1;i<=14;i++){const d=c[i]-c[i-1];d>0?g+=d:l-=d}g/=14;l/=14;
+ for(let i=15;i<n;i++){const d=c[i]-c[i-1];g=(g*13+Math.max(d,0))/14;l=(l*13+Math.max(-d,0))/14}
+ const tr=R.map((r,i)=>i?Math.max(r.h-r.l,Math.abs(r.h-R[i-1].c),Math.abs(r.l-R[i-1].c)):r.h-r.l);
+ let atr=tr.slice(1,15).reduce((a,b)=>a+b,0)/14;for(let i=15;i<n;i++)atr=(atr*13+tr[i])/14;
+ const s20=sma(20),sd=Math.sqrt(c.slice(n-20).reduce((a,b)=>a+(b-s20)**2,0)/20),ret=k=>n>k?(L/c[n-1-k]-1)*100:null;
+ const hi=Math.max(...R.map(r=>r.h)),lo=Math.min(...R.map(r=>r.l)),f=(x,d=5)=>x==null?null:+x.toFixed(d);
+ return JSON.stringify({symbol:m.symbol,name:m.longName||m.shortName,ccy:m.currency,last:f(L),time:new Date(m.regularMarketTime*1e3).toISOString(),
+  sma20:f(s20),sma50:f(sma(50)),sma200:f(sma(200)),rsi14:f(l?100-100/(1+g/l):100,1),macd_hist:f(md[n-1]-sg[n-1]),macd_hist_prev:f(md[n-2]-sg[n-2]),
+  atr_pct:f(atr/L*100,2),boll:[f(s20-2*sd),f(s20+2*sd)],ret_pct:{w1:f(ret(5),2),m1:f(ret(21),2),m3:f(ret(63),2)},hi52:f(hi),lo52:f(lo)}) })()
+```
+   For a **live read** in chat mode, add `get_page_text` on the user's tab to the same batch. Also fetch `...?range=1d&interval=1m` and, from its `meta`, compute what `ta-claude live` computes:
+   - screen vs Yahoo % = (screen / `regularMarketPrice` − 1) × 100;
+   - Yahoo lag in minutes = the time you read the screen − `regularMarketTime`;
+   - session move % = (screen / `chartPreviousClose` − 1) × 100;
+   - flags: divergence over 0.5%, Yahoo lag over 20 minutes, a page "as of" time more than 20 minutes old, ADX not on Yahoo.
+2. **News and macro:** 1–2 web searches, for example "<name> news <this month and year>". For stocks, add one search for latest earnings and valuation, which covers fundamentals. Crypto and FX have no fundamentals step.
+3. **Write the analysis yourself, in TradingAgents order.** Each role gets 1–3 lines, and each line cites the number or source it uses:
+   - **Market/technical analyst:** trend vs the 20/50/200-day averages, RSI, MACD histogram direction, Bollinger position, ATR, distance from the 52-week high and low.
+   - **News/macro analyst:** dated items only, each with its source.
+   - **Fundamentals analyst:** stocks only, from the search.
+   - **Sentiment analyst:** skip it and say "no social data in chat mode".
+   - **Bull vs bear:** the strongest case each way.
+   - **Research manager:** which side wins, and why.
+   - **Trader:** the plan, with invalidation level, trigger level and a stop of about 1–1.5× ATR.
+   - **Risk team:** one line each from the aggressive, conservative and neutral views.
+   - **Portfolio manager:** final **Rating: Buy / Overweight / Hold / Underweight / Sell**.
+4. **Reply format:** lead with the rating and price, then key levels, then the role lines, then sources, then: research only, not financial advice.
 
 ## 1. Pick the job
 
@@ -50,18 +87,18 @@ Live mode is read-only. Never click Buy, Sell or order buttons, never place or m
 1. **Find the open source.**
    - Load the browser skill for whichever browser is available, then list the open tabs.
    - Look for finance pages: tradingview.com, finance.yahoo.com, investing.com, google.com/finance, marketfn.dfm.ae / dfm.ae, adx.ae, nseindia.com, bseindia.com, binance.com, coinbase.com, a broker's web platform, or similar.
-   - If the stock is in a desktop app (MetaTrader, a broker terminal), use computer use and take a screenshot only.
+   - If the stock is in a desktop app (MetaTrader, a broker terminal), use the background app tools. Try reading the price from the accessibility element list first; if that fails, take one app screenshot at scale 0.5.
    - Exactly one match: use it. Several: ask which one. None: ask the user to open the page, or offer to open the Yahoo Finance quote page in a new tab.
    - Reuse the user's tab only to read it. Don't navigate away from it.
 2. **Read the quote.**
-   - Use page text first and a zoomed screenshot of the price area if the text is unclear.
+   - Use page text first (`get_page_text` or `find`). Take a screenshot only if the text is unusable: one, of the price area, at scale 0.5.
    - Capture the symbol, last price, change % as shown, currency, and the page's own timestamp if it shows one.
    - Map it to the Yahoo form (for example, TradingView `DFM:EMAAR` becomes `EMAAR.AE`, and `FX:EURUSD` becomes `EURUSD`).
    - Also note visible headlines or key levels, labelled as coming from the page.
 3. **Write `quote.json`** in the working directory:
    `{"symbol": "...", "price": 0, "change_pct": 0, "currency": "...", "source": "<url or app>", "captured_at": "<the time you read it, ISO with timezone>", "screen_time": "<the page's own 'as of' time, ISO, if shown>"}`
    - `captured_at` is when you read the screen, never the page's timestamp. The page's timestamp goes in `screen_time`; that is how a stale page gets caught.
-4. **Quick check** (seconds, no API cost): `ta-claude live <T> --quote quote.json --json`.
+4. **Quick check** (seconds, no API cost): `ta-claude live <T> --quote quote.json --json`. In chat mode, compute it in the browser instead, as described in section 0.
 5. **Fresh analysis**, only when asked for one (or when the flags say there is no rating, or it is more than a day old) and the user says yes:
    - Run `ta-claude live <T> --quote quote.json --full --json`. This takes several minutes and costs API usage.
    - **Re-read the page when it finishes,** then re-run the quick check, so the final price reflects the screen at the end of the run, not the start.
