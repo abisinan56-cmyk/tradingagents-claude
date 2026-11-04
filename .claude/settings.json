@@ -1,0 +1,19 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(ta-claude:*)",
+      "Bash(~/.local/bin/ta-claude:*)",
+      "Bash(~/.ta-claude/venv/bin/ta-claude:*)",
+      "Bash(~/.ta-claude/venv/bin/python -m pytest:*)",
+      "Bash(./setup.sh)",
+      "Bash(git pull:*)",
+      "Bash(git status:*)",
+      "Bash(open -e .env)"
+    ],
+    "deny": [
+      "Read(./.env)",
+      "Edit(./.env)",
+      "Write(./.env)"
+    ]
+  }
+}

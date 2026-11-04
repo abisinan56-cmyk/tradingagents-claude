@@ -31,6 +31,18 @@ FX pairs get Yahoo's `=X` suffix automatically. Pegged pairs such as USDAED or U
 
 Before running, check a ticker's classification with `ta-claude market EMAAR.AE,EURUSD`. Yahoo covers DFM stocks under `.AE` (EMAAR.AE was verified, with 5-minute intraday data), but has **no ADX stocks** (FAB and Aldar were checked). ADX tickers are therefore refused by `report`, `ensemble` and `backtest`. Live mode still gives a screen-based read for them.
 
+## Use it from Claude Code (easiest)
+
+Open this folder in Claude Code: the Code tab in the Claude desktop app, or `claude` in a terminal here. Then type `/setup`. Claude Code runs the installer, and after that:
+
+| Command | What it does |
+|---|---|
+| `/analyze NVDA` | Rating for a ticker or pair. Add `ensemble` for a vote with confidence. |
+| `/live` | Reads the stock page or app you have open and checks it against Yahoo. Add `full` for a fresh analysis. |
+| `/backtest NVDA,EURUSD 2026-07-06 2026-10-26` | Look-ahead-safe backtest. |
+
+Plain requests work too. `CLAUDE.md` and the skill tell Claude Code how to handle them. `.claude/settings.json` pre-approves the ta-claude commands and blocks Claude from reading your `.env`.
+
 ## Install
 
 macOS or Linux, one step:
@@ -41,7 +53,7 @@ git clone https://github.com/abisinan56-cmyk/tradingagents-claude && cd tradinga
 ```
 
 The script:
-1. finds Python 3.11 or newer and creates `.venv`;
+1. finds Python 3.11 or newer and creates the environment in `~/.ta-claude/venv`, outside the repo, so iCloud-synced folders stay small;
 2. installs ta-claude and runs the offline tests;
 3. installs the Claude Code skill to `~/.claude/skills/trading-agents`;
 4. puts `ta-claude` on your PATH;

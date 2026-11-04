@@ -155,3 +155,13 @@ def test_skill_frontmatter():
     text = (ROOT / "skill" / "trading-agents" / "SKILL.md").read_text()
     head = text.split("---")[1]
     assert "name: trading-agents" in head and "description:" in head
+
+
+def test_claude_code_project_files():
+    settings = json.loads((ROOT / ".claude" / "settings.json").read_text())
+    assert "Read(./.env)" in settings["permissions"]["deny"]
+    assert "Bash(./setup.sh)" in settings["permissions"]["allow"]
+    for cmd in ("setup", "analyze", "live", "backtest"):
+        text = (ROOT / ".claude" / "commands" / f"{cmd}.md").read_text()
+        assert text.startswith("---") and "description:" in text
+    assert "setup.sh" in (ROOT / "CLAUDE.md").read_text()

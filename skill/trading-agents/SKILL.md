@@ -10,7 +10,7 @@ This skill drives the `ta-claude` CLI from https://github.com/abisinan56-cmyk/tr
 ## 0. Where it can run (check silently, pick a mode)
 
 **CLI mode** needs a shell that can reach Yahoo Finance and the Anthropic API, plus `ANTHROPIC_API_KEY`. That usually means Claude Code on the user's own computer.
-- Check that `ta-claude --help` works. If the command is missing and the repo is cloned, `cd` into it and run `pip install -e .`. If it isn't cloned, clone it: the repo is private, so attach it first if a repo-attach tool exists.
+- Find the CLI: `ta-claude`, else `~/.local/bin/ta-claude`, else `~/.ta-claude/venv/bin/ta-claude`. If none works and the repo is cloned, run `./setup.sh` in it (the first run takes a few minutes). If the repo isn't cloned, clone it: it is private, so attach it first if a repo-attach tool exists.
 - Check data access: `python -c "import yfinance as y; print(len(y.Ticker('SPY').history(period='5d')))"` must print a number above 0.
 - The key must be in `.env` or the environment. If it is missing, ask the user to add it to `.env` themselves. Never ask for the key in chat, and never write it anywhere.
 
