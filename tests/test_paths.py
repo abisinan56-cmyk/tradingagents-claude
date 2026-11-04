@@ -152,6 +152,6 @@ def test_cli_paths(monkeypatch, capsys, tmp_path):
 
 
 def test_skill_frontmatter():
-    text = (ROOT / "skill" / "tradingagents-claude" / "SKILL.md").read_text()
+    text = (ROOT / "skill" / "trading-agents" / "SKILL.md").read_text()
     head = text.split("---")[1]
-    assert "name: tradingagents-claude" in head and "description:" in head
+    assert "name: trading-agents" in head and "description:" in head

@@ -1,16 +1,26 @@
 ---
-name: tradingagents-claude
+name: trading-agents
 description: Run the ta-claude project (TradingAgents multi-agent analysis on Claude) for a US stock, DFM or Indian listing, crypto or FX pair - a single report, an ensemble vote with confidence, a look-ahead-safe backtest, a portfolio-aware run, or a LIVE read of the stock page or trading app the user has open. Use when the user asks to analyse a ticker or currency pair with TradingAgents, get a buy/sell rating, test the agents' track record, check a holding against their portfolio, or asks for a live update / "what's it doing now" on a chart they have open.
 ---
 
 # TradingAgents on Claude
 
-This skill drives the `ta-claude` CLI from this repository. Its output is research only, never advice. Say so once in the final answer.
+This skill drives the `ta-claude` CLI from https://github.com/abisinan56-cmyk/tradingagents-claude. Its output is research only, never advice. Say so once in the final answer.
 
-## 0. Preconditions (check silently)
-- Run `ta-claude --help`. If the command is missing, `cd` to the repo and run `pip install -e .`.
-- `ANTHROPIC_API_KEY` must be set (in `.env` or the environment). If it is not, ask the user to add it to `.env`. Never ask for the key in chat, and never write it anywhere.
-- Live mode needs a browser tool (Claude in Chrome or the built-in browser) or computer use. If neither is available, ask the user for the price and source instead.
+## 0. Where it can run (check silently, pick a mode)
+
+**CLI mode** needs a shell that can reach Yahoo Finance and the Anthropic API, plus `ANTHROPIC_API_KEY`. That usually means Claude Code on the user's own computer.
+- Check that `ta-claude --help` works. If the command is missing and the repo is cloned, `cd` into it and run `pip install -e .`. If it isn't cloned, clone it: the repo is private, so attach it first if a repo-attach tool exists.
+- Check data access: `python -c "import yfinance as y; print(len(y.Ticker('SPY').history(period='5d')))"` must print a number above 0.
+- The key must be in `.env` or the environment. If it is missing, ask the user to add it to `.env` themselves. Never ask for the key in chat, and never write it anywhere.
+
+**Browser-only mode** applies when the shell can't reach Yahoo (for example the claude.ai cloud sandbox) or there is no key. Tell the user once that full multi-agent runs need their own machine, and give the exact command from section 1 to run there. Then still help:
+- **Live reads** (section 2) work fully. Fetch Yahoo's intraday data in the browser instead of through the CLI: `https://query1.finance.yahoo.com/v8/finance/chart/<SYMBOL>?range=1d&interval=1m`. From `meta`, read `regularMarketPrice`, `regularMarketTime` (epoch seconds), `previousClose`/`chartPreviousClose`, and the day high and low. Compute the same metrics as `ta-claude live`:
+  - screen vs Yahoo % = (screen / Yahoo last − 1) × 100;
+  - Yahoo lag in minutes = time the screen was read − `regularMarketTime`;
+  - session move % = (screen / previous close − 1) × 100.
+  Apply the same flags: divergence over 0.5%, lag over 20 minutes, and ADX not on Yahoo.
+- Give a clearly labelled **quick take** built only from what is on screen and in that data (trend on the day, position in the day's range, visible headlines). Never call it a TradingAgents rating.
 
 ## 1. Pick the job
 
@@ -88,5 +98,5 @@ Live mode is read-only. Never click Buy, Sell or order buttons, never place or m
 - Close with the research-only disclaimer. Never turn a rating into an instruction to trade, and never execute a trade even if asked; the user does that themselves.
 
 ## Install this skill
-- **Claude Code:** copy this folder to `~/.claude/skills/tradingagents-claude/`.
+- **Claude Code:** copy this folder to `~/.claude/skills/trading-agents/`.
 - **claude.ai:** zip this folder and upload it under Settings → Capabilities → Skills.

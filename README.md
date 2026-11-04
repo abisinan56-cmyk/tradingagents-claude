@@ -108,7 +108,11 @@ Start with one ticker and `--every 14`. Check your Anthropic console after the f
 
 ## Claude skill
 
-`skill/tradingagents-claude/SKILL.md` lets Claude (Claude Code, or Claude with a shell) run this project for you from plain requests. See that file to install it.
+`skill/trading-agents/SKILL.md` lets Claude run this project for you from plain requests.
+- **Claude Code on your computer:** full mode. It runs the CLI and reads your open stock pages for live mode.
+- **claude.ai:** browser-only mode. Live reads work through Claude in Chrome. For a full multi-agent run, Claude gives you the command to run on your machine, because the claude.ai sandbox can't reach Yahoo.
+
+To install in Claude Code, copy the folder to `~/.claude/skills/trading-agents/`. On claude.ai, upload the zipped folder under Settings → Capabilities → Skills.
 
 ## Upstream
 
