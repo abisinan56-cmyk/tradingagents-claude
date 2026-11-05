@@ -31,6 +31,7 @@ This skill drives the `ta-claude` CLI from https://github.com/abisinan56-cmyk/tr
    - If a Twelve Data call is refused for limits, fall back to Yahoo. Say which source each number came from.
    - If the two sources differ on an indicator (their daily forex bars can differ), say so in one line.
    - Check `get_api_usage` only when the user asks or a call fails.
+   - **Free-plan cap: 8 credits per minute.** One call is one credit, and the connector rejects comma-separated multi-symbol requests. Never send more than 7 calls in one round. For a multi-pair screen without the browser, pace rounds: after each round of 7 or fewer, wait about 62 seconds with a background `sleep 62` (a foreground sleep is blocked), and tell the user it takes about 1 minute per round. A screen of 6 pairs at 5 indicators each is 30 credits, about 4 rounds. With the browser available, use Yahoo instead: every pair in one `javascript_exec` (fetch each chart URL from the same Yahoo origin), free and instant.
    - **Yahoo through the browser:** one `browser_batch`. Navigate to `https://query1.finance.yahoo.com/v8/finance/chart/<YAHOO_SYMBOL>?range=1y&interval=1d`, then run this with `javascript_exec`:
 ```js
 (() => { const j=JSON.parse(document.body.innerText).chart.result[0], q=j.indicators.quote[0], m=j.meta;
