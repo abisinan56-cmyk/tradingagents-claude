@@ -67,6 +67,18 @@ This skill drives the `ta-claude` CLI from https://github.com/abisinan56-cmyk/tr
    - **Portfolio manager:** final **Rating: Buy / Overweight / Hold / Underweight / Sell**.
 4. **Reply format:** lead with the rating and price, then key levels, then the role lines, then sources, then: research only, not financial advice.
 
+## Journal and learning (every mode)
+You don't remember past chats, so the journal is the memory.
+- **Before any analysis or trade idea,** read the trade journal if one exists: the project doc `claude/trade-journal.md` (use the Projects tool), or else `~/.ta-claude/memory/trading_memory.md` in CLI mode. Apply its lessons, risk rule and open trades, and mention any open trade on the same pair or the same currency direction.
+- **Size every idea** from the journal's risk rule (default 1% of equity): lots = (equity × risk) ÷ (stop pips × pip value per lot). Pip value is $10 per lot for XXX/USD pairs, and $10 ÷ price for USD/XXX pairs.
+- **When the user reports an entry, exit, fill, cancel or result,** update the journal in the same turn:
+  - the trade row (exit, result, R = P/L ÷ amount risked);
+  - the running stats;
+  - one new lesson, only if the trade taught something not already listed.
+  Ask for any missing exit price or P/L rather than guessing, and mark estimates as estimates.
+- **About once a week, or when asked,** add a dated market-regime snapshot (trend and momentum per pair) so later chats can see how the trends changed.
+- Never present the journal's win rate as proof of an edge under 30 closed trades.
+
 ## 1. Pick the job
 
 | User wants | Command |
