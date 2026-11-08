@@ -132,7 +132,7 @@ Live mode is read-only. Never click Buy, Sell or order buttons, never place or m
 7. **"Update" / "again":** repeat steps 2–4 on the same tab. Run a full analysis again only on request. For repeating updates on a timer, offer a scheduled task rather than looping.
 
 ## 2.2 Strategy comparison
-- Use `ta-claude strategy-suite <PAIR> --start <date> --end <date> --json` to compare the fixed trend, mean-reversion, breakout, and RSI-momentum models under the same completed-bar execution and simplified turnover-cost rules. Report every result with drawdown and buy-and-hold, not just the highest in-sample return. Do not call it an exhaustive strategy set or a recommendation.
+- Use `ta-claude strategy-suite <PAIR> --start <date> --end <date> --json` to compare the fixed trend, mean-reversion, breakout, and RSI-momentum models under the same completed-bar, next-open execution and simplified turnover-cost rules. Report every result with drawdown and buy-and-hold, not just the highest in-sample return. Do not call it an exhaustive strategy set or a recommendation.
 
 ## 2.3 FX decision-support brief
 - For a single pair, use `ta-claude fx-brief <PAIR> --json`; add `--portfolio <file>` only when the user explicitly supplies a portfolio file. The brief presents a technical regime, conditional bullish/bearish/no-trade scenarios, scheduled-event checklist, non-personalised risk assumptions, declared-FX currency overlap, and completed-daily-bar candle/price-action analysis (OHLC, patterns, RSI, MACD, ATR, Bollinger bands, and support/resistance).

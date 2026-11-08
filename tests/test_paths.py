@@ -210,7 +210,7 @@ def test_fx_brief_cli_works_without_an_api_key(monkeypatch, capsys):
     from ta_claude.model import PriceBar
     monkeypatch.delenv("ANTHROPIC_API_KEY", raising=False)
     monkeypatch.setattr(cli, "load_dotenv", lambda *a, **k: None)
-    bars = [PriceBar(f"2026-01-{(i % 28) + 1:02d}", 100 + i) for i in range(80)]
+    bars = [PriceBar(f"2026-01-{(i % 28) + 1:02d}", 100 + i, 100 + i, 100 + i, 100 + i) for i in range(80)]
     monkeypatch.setattr(model, "fetch_daily_history", lambda *a: bars)
     assert cli.main(["fx-brief", "EURUSD", "--json"]) == 0
     output = json.loads(capsys.readouterr().out)
@@ -223,7 +223,8 @@ def test_strategy_suite_cli_works_without_an_api_key(monkeypatch, capsys):
     from ta_claude.model import PriceBar
     monkeypatch.delenv("ANTHROPIC_API_KEY", raising=False)
     monkeypatch.setattr(cli, "load_dotenv", lambda *a, **k: None)
-    bars = [PriceBar(f"2026-01-{(i % 28) + 1:02d}", 100 + i, 99 + i, 101 + i, 98 + i) for i in range(120)]
+    from datetime import date, timedelta
+    bars = [PriceBar((date(2026, 1, 1) + timedelta(days=i)).isoformat(), 100 + i, 99 + i, 101 + i, 98 + i) for i in range(120)]
     monkeypatch.setattr(model, "fetch_daily_history", lambda *a: bars)
     assert cli.main(["strategy-suite", "EURUSD", "--start", bars[60].day, "--end", bars[-2].day, "--json"]) == 0
     assert len(json.loads(capsys.readouterr().out)["results"]) == 4

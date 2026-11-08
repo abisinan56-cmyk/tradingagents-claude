@@ -134,7 +134,7 @@ def _bars(closes, start="2026-01-01"):
     from datetime import date, timedelta
     from ta_claude.model import PriceBar
     first = date.fromisoformat(start)
-    return [PriceBar((first + timedelta(days=i)).isoformat(), close) for i, close in enumerate(closes)]
+    return [PriceBar((first + timedelta(days=i)).isoformat(), close, close, close, close) for i, close in enumerate(closes)]
 
 
 def test_trade_plan_is_deterministic_and_respects_hold_rating():
@@ -175,11 +175,11 @@ def test_fx_scan_ranks_directional_setups(monkeypatch):
 def test_fx_decision_brief_has_scenarios_and_exposure(tmp_path):
     from ta_claude.model import build_fx_decision_brief
     portfolio = tmp_path / "portfolio.json"
-    portfolio.write_text('{"positions": [{"ticker": "GBPUSD", "quantity": 1}]}')
+    portfolio.write_text('{"positions": [{"ticker": "GBPUSD", "quantity": 1, "average_price": 1.25}]}')
     brief = build_fx_decision_brief("EURUSD", _bars([100 + i for i in range(80)]), str(portfolio))
     assert brief.setup["action"] == "long"
     assert brief.currency_exposure == {"EUR": 1, "USD": -1}
-    assert brief.portfolio_overlap == {"GBP": 1, "USD": -1}
+    assert brief.portfolio_overlap["positions"][0]["currency_legs"] == {"GBP": 1, "USD": -1.25}
     assert "inflation" in " ".join(brief.event_risk_checklist).lower()
     assert set(brief.risk_profiles) == {"conservative", "balanced", "aggressive"}
 
@@ -200,7 +200,8 @@ def test_technical_analysis_reports_candle_indicators_and_levels():
 
 def test_strategy_suite_compares_documented_signal_families():
     from ta_claude.model import PriceBar, backtest_strategy_suite
-    bars = [PriceBar(f"2026-01-{(i % 28) + 1:02d}", 100 + i * .2, 100 + i * .2 - .1,
+    from datetime import date, timedelta
+    bars = [PriceBar((date(2026, 1, 1) + timedelta(days=i)).isoformat(), 100 + i * .2, 100 + i * .2 - .1,
                      100 + i * .2 + .3, 100 + i * .2 - .3) for i in range(120)]
     suite = backtest_strategy_suite("EURUSD", bars, bars[60].day, bars[-2].day)
     assert [item["strategy"] for item in suite.results] == ["trend", "mean_reversion", "breakout", "rsi_momentum"]

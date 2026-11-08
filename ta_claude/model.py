@@ -14,6 +14,7 @@ from pathlib import Path
 from statistics import fmean, pstdev
 from urllib.parse import urlencode
 from urllib.request import Request, urlopen
+from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 from .config import HOME
 from .markets import classify
@@ -66,8 +67,12 @@ class StrategyBacktest:
     warnings: list[str] = field(default_factory=list)
 
 
-def parse_yahoo_chart(payload: dict) -> list[PriceBar]:
-    """Parse a Yahoo chart response into sorted completed adjusted-close bars."""
+def parse_yahoo_chart(payload: dict, *, now: datetime | None = None) -> list[PriceBar]:
+    """Parse consistently adjusted daily OHLC; omit bars less than 48 hours old.
+
+    Yahoo timestamps mark the start of a daily bar, not its completion. The
+    conservative 48-hour delay avoids relying on exchange-specific sessions.
+    """
     result = (payload.get("chart") or {}).get("result") or []
     if not result:
         raise ValueError("Yahoo returned no daily price history.")
@@ -75,15 +80,33 @@ def parse_yahoo_chart(payload: dict) -> list[PriceBar]:
     stamps = chart.get("timestamp") or []
     indicators = chart.get("indicators") or {}
     quote = (indicators.get("quote") or [{}])[0]
-    closes = ((indicators.get("adjclose") or [{}])[0].get("adjclose") or quote.get("close") or [])
-    opens, highs, lows = quote.get("open") or [], quote.get("high") or [], quote.get("low") or []
-    bars = [PriceBar(datetime.fromtimestamp(ts, timezone.utc).date().isoformat(), float(close),
-                     float(opens[i]) if i < len(opens) and opens[i] is not None else float(close),
-                     float(highs[i]) if i < len(highs) and highs[i] is not None else float(close),
-                     float(lows[i]) if i < len(lows) and lows[i] is not None else float(close))
-            for i, (ts, close) in enumerate(zip(stamps, closes)) if close is not None and float(close) > 0]
+    raw_closes = quote.get("close") or []
+    adjusted = (indicators.get("adjclose") or [{}])[0].get("adjclose") or []
+    fields = [quote.get(name) or [] for name in ("open", "high", "low")]
+    cutoff = (now or datetime.now(timezone.utc)).timestamp() - 48 * 3600
+    try:
+        exchange_zone = ZoneInfo(chart.get("meta", {}).get("exchangeTimezoneName") or "UTC")
+    except (ZoneInfoNotFoundError, ValueError):
+        exchange_zone = timezone.utc
+    bars = []
+    for i, ts in enumerate(stamps):
+        if ts > cutoff or i >= len(raw_closes) or raw_closes[i] is None:
+            continue
+        raw = float(raw_closes[i])
+        close = float(adjusted[i]) if i < len(adjusted) and adjusted[i] is not None else raw
+        if not math.isfinite(raw) or not math.isfinite(close) or raw <= 0 or close <= 0:
+            continue
+        factor = close / raw
+        ohl = []
+        for values in fields:
+            value = float(values[i]) * factor if i < len(values) and values[i] is not None else None
+            ohl.append(value if value is not None and math.isfinite(value) and value > 0 else None)
+        bars.append(PriceBar(datetime.fromtimestamp(ts, exchange_zone).date().isoformat(), close, *ohl))
+    bars.sort(key=lambda bar: bar.day)
     if not bars:
-        raise ValueError("Yahoo returned no usable closing prices.")
+        raise ValueError("Yahoo returned no usable completed daily bars.")
+    if len({bar.day for bar in bars}) != len(bars):
+        raise ValueError("Yahoo returned duplicate daily bars.")
     return bars
 
 
@@ -138,6 +161,9 @@ def build_trade_plan(ticker: str, bars: list[PriceBar], source_rating: str | Non
     rating_action = {"Buy": "long", "Overweight": "long", "Sell": "short", "Underweight": "short",
                      "Hold": "flat", "REVIEW": "flat"}.get(source_rating or "", None)
     warnings = list(market.warnings)
+    age_days = (datetime.now(timezone.utc).date() - date.fromisoformat(bars[-1].day)).days
+    if age_days > 4:
+        warnings.append(f"Latest daily bar is {age_days} calendar days old; verify market hours and data freshness.")
     if rating_action and rating_action != action:
         warnings.append("The LLM rating and deterministic trend model disagree; model confidence is reduced.")
     if source_rating in {"Hold", "REVIEW"}:
@@ -163,59 +189,15 @@ def build_trade_plan(ticker: str, bars: list[PriceBar], source_rating: str | Non
 
 
 def backtest_trend(ticker: str, bars: list[PriceBar], start: str, end: str, fast_window: int = 20,
-                    slow_window: int = 50, cost_bps: float = 10.0) -> StrategyBacktest:
-    """Backtest a close-to-close, next-bar 20/50 trend strategy without future data."""
-    if cost_bps < 0:
-        raise ValueError("cost-bps must not be negative.")
-    requested = [bar for bar in bars if start <= bar.day <= end]
-    if len(requested) < 2:
-        raise ValueError("The requested range needs at least two trading days.")
-    equity = peak = 1.0
-    max_drawdown = 0.0
-    returns: list[float] = []
-    trade_returns: list[float] = []
-    position = 0
-    entry_equity: float | None = None
-    trades = 0
-    for i in range(slow_window, len(bars) - 1):
-        bar, next_bar = bars[i], bars[i + 1]
-        if not (start <= bar.day <= end):
-            continue
-        signal, *_ = _signal([x.close for x in bars[:i + 1]], fast_window, slow_window)
-        desired = {"long": 1, "short": -1, "flat": 0}[signal]
-        turnover = abs(desired - position)
-        if turnover:
-            if position and entry_equity is not None:
-                trade_returns.append(equity / entry_equity - 1)
-            if desired:
-                entry_equity = equity
-            else:
-                entry_equity = None
-            trades += turnover
-        cost = turnover * cost_bps / 10_000
-        gross = desired * (next_bar.close / bar.close - 1)
-        net = gross - cost
-        equity *= 1 + net
-        returns.append(net)
-        peak = max(peak, equity)
-        max_drawdown = min(max_drawdown, equity / peak - 1)
-        position = desired
-    if position and entry_equity is not None:
-        trade_returns.append(equity / entry_equity - 1)
-    if not returns:
-        raise ValueError("Insufficient warmed-up bars inside the requested range.")
-    ann_return = (equity ** (252 / len(returns)) - 1) if len(returns) >= 2 else None
-    ann_vol = pstdev(returns) * math.sqrt(252) if len(returns) > 1 else None
-    sharpe = ann_return / ann_vol if ann_return is not None and ann_vol else None
-    first, last = requested[0].close, requested[-1].close
-    return StrategyBacktest(classify(ticker).symbol, start, end, fast_window, slow_window, cost_bps, len(returns),
-                            trades, round(sum(x > 0 for x in trade_returns) / len(trade_returns), 4) if trade_returns else None,
-                            round((equity - 1) * 100, 3), round(ann_return * 100, 3) if ann_return is not None else None,
-                            round(ann_vol * 100, 3) if ann_vol is not None else None,
-                            round(sharpe, 3) if sharpe is not None else None, round(max_drawdown * 100, 3),
-                            round((last / first - 1) * 100, 3),
-                            ["Signals use completed closes and apply to the following close-to-close return.",
-                             "Results are a deterministic research simulation, not evidence of future performance."])
+                   slow_window: int = 50, cost_bps: float = 10.0) -> StrategyBacktest:
+    """Use completed-close signals and next-open fills within the requested dates."""
+    from .simulation import backtest_trend as simulate_trend
+    result = simulate_trend(bars, start, end, fast_window, slow_window, cost_bps,
+                            ticker=classify(ticker).symbol)
+    return StrategyBacktest(result.ticker, start, end, fast_window, slow_window, cost_bps,
+                            result.observations, result.trades, result.win_rate, result.total_return_pct,
+                            result.annualized_return_pct, result.annualized_volatility_pct, result.sharpe,
+                            result.max_drawdown_pct, result.buy_and_hold_return_pct, result.warnings)
 
 
 def write_trade_plan_dashboard(plan: TradePlan) -> str:
@@ -253,6 +235,8 @@ def scan_fx(pairs: list[str] | tuple[str, ...] = MAJOR_FX_PAIRS) -> FXScan:
     today = date.today()
     for pair in pairs:
         try:
+            if classify(pair).name != "fx":
+                raise ValueError(f"{pair} is not a recognised FX pair.")
             bars = fetch_daily_history(pair, (today - timedelta(days=730)).isoformat(), today.isoformat())
             plan = build_trade_plan(pair, bars)
             closes = [bar.close for bar in bars]
@@ -284,7 +268,9 @@ def _rsi(closes: list[float], period: int = 14) -> float:
     changes = [b - a for a, b in zip(closes[-period - 1:-1], closes[-period:])]
     gains = _mean([max(change, 0) for change in changes])
     losses = _mean([max(-change, 0) for change in changes])
-    return 100.0 if losses == 0 else round(100 - (100 / (1 + gains / losses)), 2)
+    if losses == 0:
+        return 50.0 if gains == 0 else 100.0
+    return round(100 - (100 / (1 + gains / losses)), 2)
 
 
 def _ohlc(bar: PriceBar) -> tuple[float, float, float, float]:
@@ -297,6 +283,8 @@ def technical_analysis(bars: list[PriceBar]) -> dict:
         raise ValueError("Need at least 51 completed bars for technical analysis.")
     closes = [bar.close for bar in bars]
     last, previous = bars[-1], bars[-2]
+    if any(value is None for bar in bars[-20:] for value in (bar.open, bar.high, bar.low)):
+        raise ValueError("OHLC data is incomplete; candle and volatility analysis unavailable.")
     op, high, low, close = _ohlc(last)
     prev_open, _, _, prev_close = _ohlc(previous)
     body, range_ = abs(close - op), max(high - low, 1e-12)
@@ -305,16 +293,16 @@ def technical_analysis(bars: list[PriceBar]) -> dict:
     patterns: list[str] = []
     if body / range_ <= 0.1:
         patterns.append("doji (indecision)")
-    if lower_wick >= 2 * max(body, 1e-12) and close >= op:
+    if body > range_ * 0.1 and lower_wick >= 2 * body and upper_wick <= body and close > op:
         patterns.append("bullish pin bar")
-    if upper_wick >= 2 * max(body, 1e-12) and close <= op:
+    if body > range_ * 0.1 and upper_wick >= 2 * body and lower_wick <= body and close < op:
         patterns.append("bearish pin bar")
     if close > op and prev_close < prev_open and close >= prev_open and op <= prev_close:
         patterns.append("bullish engulfing")
     if close < op and prev_close > prev_open and close <= prev_open and op >= prev_close:
         patterns.append("bearish engulfing")
     prev_high, prev_low = _ohlc(previous)[1:3]
-    if high <= prev_high and low >= prev_low:
+    if high < prev_high and low > prev_low:
         patterns.append("inside bar")
     true_ranges = [max((bar.high or bar.close) - (bar.low or bar.close),
                        abs((bar.high or bar.close) - prior.close), abs((bar.low or bar.close) - prior.close))
@@ -353,14 +341,16 @@ class FXDecisionBrief:
     event_risk_checklist: list[str]
     risk_profiles: dict[str, dict]
     currency_exposure: dict[str, int]
-    portfolio_overlap: dict[str, int]
+    portfolio_overlap: dict
     warnings: list[str] = field(default_factory=list)
 
 
 def _pair_currencies(symbol: str) -> tuple[str, str]:
     pair = symbol.upper().replace("=X", "")
-    if len(pair) != 6 or not pair.isalpha():
-        raise ValueError(f"{symbol} is not a six-letter FX pair.")
+    from .markets import CURRENCIES
+    if (len(pair) != 6 or not pair.isalpha() or pair[:3] not in CURRENCIES
+            or pair[3:] not in CURRENCIES or pair[:3] == pair[3:]):
+        raise ValueError(f"{symbol} is not a supported FX pair.")
     return pair[:3], pair[3:]
 
 
@@ -373,28 +363,12 @@ def currency_exposure(symbol: str, action: str, multiplier: int = 1) -> dict[str
     return {base: direction * multiplier, quote: -direction * multiplier} if direction else {}
 
 
-def portfolio_currency_overlap(path: str | None) -> dict[str, int]:
-    """Summarise declared FX positions only; unknown instruments are intentionally ignored."""
+def portfolio_currency_overlap(path: str | None) -> dict:
+    """Return itemized cost-basis FX legs, not live or net portfolio exposure."""
     if not path:
-        return {}
-    try:
-        positions = json.loads(Path(path).read_text(encoding="utf-8")).get("positions", [])
-    except (OSError, json.JSONDecodeError) as exc:
-        raise ValueError(f"Could not read portfolio JSON: {exc}") from exc
-    exposure: dict[str, int] = {}
-    for position in positions:
-        ticker = str(position.get("ticker", ""))
-        try:
-            base, quote = _pair_currencies(ticker)
-        except ValueError:
-            continue
-        quantity = float(position.get("quantity", 0))
-        if quantity == 0:
-            continue
-        sign = 1 if quantity > 0 else -1
-        exposure[base] = exposure.get(base, 0) + sign
-        exposure[quote] = exposure.get(quote, 0) - sign
-    return {currency: unit for currency, unit in sorted(exposure.items()) if unit}
+        return {"positions": [], "assumptions": ["No portfolio was supplied."]}
+    from .fx_exposure import portfolio_fx_exposure
+    return portfolio_fx_exposure(path)
 
 
 def build_fx_decision_brief(ticker: str, bars: list[PriceBar], portfolio: str | None = None,
@@ -402,8 +376,9 @@ def build_fx_decision_brief(ticker: str, bars: list[PriceBar], portfolio: str | 
     """Frame technical evidence and invalidation conditions without making a personal recommendation."""
     plan = build_trade_plan(ticker, bars, source_rating)
     base, quote = _pair_currencies(plan.ticker)
-    trend_description = (f"{plan.action.title()} trend regime: the completed close is aligned with the 20/50-day averages "
-                         "and 20-day momentum." if plan.action != "flat" else
+    technical_direction, *_ = _signal([bar.close for bar in bars])
+    trend_description = (f"{technical_direction.title()} trend regime: the completed close is aligned with the 20/50-day averages "
+                         "and 20-day momentum." if technical_direction != "flat" else
                          "Mixed/flat trend regime: the model has no directional confirmation.")
     bullish = {"condition": f"{base} strengthens versus {quote}; price remains above the entry reference and confirms trend.",
                "reference_target": plan.target_reference if plan.action == "long" else plan.stop_reference,
@@ -443,9 +418,9 @@ class StrategySuite:
     cost_bps: float
     results: list[dict]
     warnings: list[str] = field(default_factory=lambda: [
-        "Each strategy uses completed daily bars and applies to the following close-to-close return.",
+        "Signals use completed closes and fill at the following bar open, with overnight gaps accounted for.",
         "This comparison is in-sample historical research; it does not select a future winner or establish an edge.",
-        "Costs are a simplified turnover estimate and exclude bid/ask spread, slippage, financing, and gaps.",
+        "Costs are a simplified turnover estimate; bid/ask spread, slippage and financing are excluded.",
     ])
 
 
@@ -459,8 +434,10 @@ def _strategy_direction(name: str, history: list[PriceBar]) -> int:
         return 1 if closes[-1] <= sma - band and rsi < 35 else -1 if closes[-1] >= sma + band and rsi > 65 else 0
     if name == "breakout":
         prior = history[-21:-1]
-        high = max((bar.high or bar.close) for bar in prior)
-        low = min((bar.low or bar.close) for bar in prior)
+        if any(bar.high is None or bar.low is None for bar in prior):
+            raise ValueError("Breakout strategy requires historical high and low prices.")
+        high = max(bar.high for bar in prior)
+        low = min(bar.low for bar in prior)
         return 1 if closes[-1] > high else -1 if closes[-1] < low else 0
     if name == "rsi_momentum":
         rsi = _rsi(closes)
@@ -470,41 +447,17 @@ def _strategy_direction(name: str, history: list[PriceBar]) -> int:
 
 def backtest_strategy(ticker: str, bars: list[PriceBar], start: str, end: str, strategy: str,
                       cost_bps: float = 10.0) -> dict:
-    """Evaluate one fixed signal family with identical execution/cost assumptions."""
+    """Evaluate one fixed signal family with next-open fills and identical costs."""
     if strategy not in STRATEGIES:
         raise ValueError(f"Unknown strategy {strategy!r}; choose from {', '.join(STRATEGIES)}.")
-    if cost_bps < 0:
-        raise ValueError("cost-bps must not be negative.")
-    requested = [bar for bar in bars if start <= bar.day <= end]
-    if len(requested) < 2:
-        raise ValueError("The requested range needs at least two trading days.")
-    equity = peak = 1.0
-    returns: list[float] = []
-    position = 0
-    turnover_events = 0
-    max_drawdown = 0.0
-    for i in range(50, len(bars) - 1):
-        bar, next_bar = bars[i], bars[i + 1]
-        if not (start <= bar.day <= end):
-            continue
-        desired = _strategy_direction(strategy, bars[:i + 1])
-        turnover = abs(desired - position)
-        turnover_events += turnover
-        net = desired * (next_bar.close / bar.close - 1) - turnover * cost_bps / 10_000
-        equity *= 1 + net
-        returns.append(net)
-        peak = max(peak, equity)
-        max_drawdown = min(max_drawdown, equity / peak - 1)
-        position = desired
-    if not returns:
-        raise ValueError("Insufficient warmed-up bars inside the requested range.")
-    annualized = equity ** (252 / len(returns)) - 1 if len(returns) > 1 else None
-    volatility = pstdev(returns) * math.sqrt(252) if len(returns) > 1 else None
-    return {"strategy": strategy, "observations": len(returns), "turnover_events": turnover_events,
-            "total_return_pct": round((equity - 1) * 100, 3), "annualized_return_pct": round(annualized * 100, 3) if annualized is not None else None,
-            "annualized_volatility_pct": round(volatility * 100, 3) if volatility is not None else None,
-            "sharpe": round(annualized / volatility, 3) if annualized is not None and volatility else None,
-            "max_drawdown_pct": round(max_drawdown * 100, 3), "buy_and_hold_return_pct": round((requested[-1].close / requested[0].close - 1) * 100, 3)}
+    from .simulation import backtest_strategy as simulate_strategy
+
+    def signal(history):
+        return _strategy_direction(strategy, history) if len(history) >= 51 else 0
+
+    result = simulate_strategy(bars, start, end, strategy, signal, cost_bps,
+                               ticker=classify(ticker).symbol)
+    return asdict(result)
 
 
 def backtest_strategy_suite(ticker: str, bars: list[PriceBar], start: str, end: str,
