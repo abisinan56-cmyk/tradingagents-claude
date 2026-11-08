@@ -131,6 +131,22 @@ Live mode is read-only. Never click Buy, Sell or order buttons, never place or m
    - If divergence is over 0.5% or Yahoo lags by more than 20 minutes, say plainly that the agents analysed delayed data.
 7. **"Update" / "again":** repeat steps 2–4 on the same tab. Run a full analysis again only on request. For repeating updates on a timer, offer a scheduled task rather than looping.
 
+## 2.2 Strategy comparison
+- Use `ta-claude strategy-suite <PAIR> --start <date> --end <date> --json` to compare the fixed trend, mean-reversion, breakout, and RSI-momentum models under the same completed-bar execution and simplified turnover-cost rules. Report every result with drawdown and buy-and-hold, not just the highest in-sample return. Do not call it an exhaustive strategy set or a recommendation.
+
+## 2.3 FX decision-support brief
+- For a single pair, use `ta-claude fx-brief <PAIR> --json`; add `--portfolio <file>` only when the user explicitly supplies a portfolio file. The brief presents a technical regime, conditional bullish/bearish/no-trade scenarios, scheduled-event checklist, non-personalised risk assumptions, declared-FX currency overlap, and completed-daily-bar candle/price-action analysis (OHLC, patterns, RSI, MACD, ATR, Bollinger bands, and support/resistance).
+- Use `--with-news` only for a requested fresh multi-agent news pass; it costs an API run. Clearly distinguish observed/news-research evidence from the static event checklist. Never call this personalised advice, a guaranteed outcome, or an instruction to execute a trade.
+
+## 2.4 FX opportunity scan
+- To compare major FX research setups at the time of the request, run `ta-claude fx-scan --json`. It ranks EUR/USD, GBP/USD, USD/JPY, USD/CHF, USD/CAD, AUD/USD, and NZD/USD from completed Yahoo daily bars, then returns timestamped reference risk levels and freshness limitations.
+- `ta-claude fx-scan --with-news --json` spends one full multi-agent run on the top directional candidate and adds fresh market/news research. It does not cover all news, and it must not be described as a guaranteed best trade. Report the selected pair, setup, data time, price-only limitations, news-research report path, and all warnings.
+
+## 2.5 Deterministic trading-model research
+- For a transparent price-only research plan, run `ta-claude plan <T> --rating <rating> --json`. It requires no API key, reads completed Yahoo daily bars, and writes an HTML dashboard. State the action, trend rule, reference levels, and warnings without framing them as instructions to trade.
+- For the fixed 20/50 trend simulation, run `ta-claude strategy-backtest <T> --start <date> --end <date> --json`. It has no LLM cost and no model-cutoff restriction, but it is still historical research. Report its return alongside buy-and-hold, max drawdown, costs, and the warning that past results do not establish an edge.
+- Use `report --plan` or `ensemble --plan` only when the user wants the deterministic plan attached to LLM research. If their directions disagree, call that out rather than choosing one silently.
+
 ## 3. Guardrails before spending money
 - **Cost:** a backtest costs about (tickers × dates) times a single report, and an ensemble costs about N times a single report. Before any backtest over 10 cells, any ensemble with n over 5, or any `live --full`, state the cost and get a yes.
 - **Backtest dates:** every date must fall after the model cutoff, 2026-06-30 for the default models. If the user asks for earlier dates, explain the look-ahead problem. Use `--allow-contaminated` only if they insist, and label the results contaminated.

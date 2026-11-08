@@ -31,6 +31,13 @@ Quick map:
 | Against holdings | add `--portfolio <file.json>` |
 | Live, on a page or app the user has open | skill section 2: read the screen into `quote.json`, then `ta-claude live <T> --quote quote.json --json` |
 | What market is this | `ta-claude market <T>` (free, instant) |
+| Deterministic research plan | `ta-claude plan <T> --rating Buy --json` (no API key) |
+| Technical strategy simulation | `ta-claude strategy-backtest <T> --start ... --end ... --json` (no API key) |
+| Compare strategy suite | `ta-claude strategy-suite EURUSD --start ... --end ... --json` (no API key) |
+| Rank current major-FX setups | `ta-claude fx-scan --json` (no API key) |
+| Add fresh news research to top FX candidate | `ta-claude fx-scan --with-news --json` (API cost) |
+| Structured FX research brief | `ta-claude fx-brief EURUSD --json` (no API key) |
+| Add fresh news research to an FX brief | `ta-claude fx-brief EURUSD --with-news --json` (API cost) |
 
 Tickers:
 - US: `NVDA`
@@ -54,6 +61,7 @@ Rules:
   - `runner.py`: report, ensemble, backtest and scoring
   - `replay.py`: record and replay
   - `live.py`: screen vs Yahoo
+  - `model.py`: deterministic trend, candle/indicator, risk, FX scan and brief analysis
   - `markets.py`: ticker classification
   - `cutoff.py`: look-ahead guard
   - `config.py`: Claude models and benchmarks

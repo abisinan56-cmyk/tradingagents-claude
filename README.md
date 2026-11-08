@@ -14,7 +14,7 @@
 | Social feeds leak the future into backtests | Backtests drop the social analyst automatically. |
 | No baselines, no costs, no significance test | Backtests report results net of round-trip costs, a bootstrap 95% CI, hit rate, and three baselines: always-long, the benchmark, and random direction. |
 | An ensemble would flood the memory log | Ensemble members write to copies of the log. Only the consensus is recorded. |
-| Cost | Opus 5.5 runs only the two manager agents; Sonnet 5 runs the rest. Debate and risk rounds default to 1. Replays are free. |
+| Cost | Opus 5.5 is the default for every agent tier for maximum reasoning quality. Select a cheaper analyst tier explicitly with `--quick`. Debate and risk rounds default to 1. Replays are free. |
 
 ## Markets
 
@@ -81,7 +81,39 @@ ta-claude report NVDA --portfolio examples/portfolio.example.json
 # 5. Live check of a price read off your screen (seconds, no API cost)
 ta-claude live EMAAR.AE --price 12.30 --source tradingview.com
 ta-claude live EMAAR.AE --quote quote.json --full   # plus a fresh analysis (minutes, costs API)
+
+# 6. Deterministic technical model and risk template (no LLM/API key)
+ta-claude plan NVDA --rating Buy --json
+
+# 7. Deterministic 20/50 trend-model backtest (no LLM/API key)
+ta-claude strategy-backtest NVDA --start 2025-01-01 --end 2026-01-01 --cost-bps 10 --json
+
+# 8. Rank current major-FX research setups; fresh news research for its top directional candidate costs API usage
+ta-claude fx-scan --json
+ta-claude fx-scan --with-news --json
+
+# 9. Structured FX decision-support brief with scenarios, risks, event checklist, and portfolio overlap
+ta-claude fx-brief EURUSD --portfolio examples/portfolio.example.json --json
+ta-claude fx-brief EURUSD --with-news --json  # fresh market/news research costs API usage
+
+# 10. Compare four documented signal families under the same costs and execution assumptions
+ta-claude strategy-suite EURUSD --start 2025-01-01 --end 2026-01-01 --cost-bps 10 --json
 ```
+
+
+## Deterministic trading-model research
+
+`plan` combines completed Yahoo daily closes with an optional TradingAgents rating. Its transparent 20/50-day trend and 20-day momentum rules produce a `long`, `short`, or `flat` research signal, reference entry/stop/target levels, a volatility-based risk distance, and a capped model-notional percentage. It writes a portable HTML dashboard to `~/.ta-claude/trade-plans` and never connects to a broker or sends an order.
+
+Use `report --plan` or `ensemble --plan` to attach this independent plan to an LLM research result. The output keeps disagreement explicit rather than resolving it silently. If Yahoo history is unavailable, the completed LLM report still returns and its `trade_plan` field explains why the technical plan was unavailable.
+
+`strategy-suite` compares four intentionally limited, documented daily-bar models under identical next-bar and turnover-cost assumptions: 20/50 trend following, Bollinger/RSI mean reversion, 20-bar breakout, and RSI momentum. This is a representative suite—not an unbounded catalogue of strategies—and its in-sample comparison cannot identify a future winner.
+
+`fx-brief` turns one pair’s technical plan into a structured decision-support brief: market regime, bullish/bearish and no-trade scenarios, central-bank/inflation/jobs/policy event checklist, transparent conservative/balanced/aggressive risk assumptions, and declared FX portfolio-overlap exposure. It now includes completed daily **OHLC candle analysis** (body/wicks, doji, pin bars, engulfing and inside-bar detection), 20/50-day trend, RSI-14, MACD/signal/histogram, ATR-14, Bollinger bands, and 20-bar support/resistance. It does not use a live economic-calendar, bid/ask, liquidity, financing, tax, leverage, or personal-suitability feed; all omissions are returned as warnings. Add `--with-news` only when a fresh, paid multi-agent news research run is wanted.
+
+`fx-scan` ranks the default major pairs (EUR/USD, GBP/USD, USD/JPY, USD/CHF, USD/CAD, AUD/USD and NZD/USD) by the deterministic trend-strength score, with data timestamps, reference risk levels, and data availability warnings. `fx-scan --with-news` then runs fresh multi-agent market and news research for the highest-ranked directional candidate only; it requires `ANTHROPIC_API_KEY`, costs an API run, and reports the sources available to the underlying research pipeline. Neither mode claims exhaustive news coverage or treats a rank as an instruction to trade.
+
+`strategy-backtest` simulates the same long/short/flat 20/50 trend rule. A signal uses a completed close and applies only to the following close-to-close return; turnover costs are charged at every position change. It reports strategy and buy-and-hold returns, drawdown, annualised statistics, and turnover events. It is independent of the LLM training cutoff because it makes no model calls. These outputs are historical research simulations, not investment recommendations or evidence of future performance.
 
 ## Live mode
 

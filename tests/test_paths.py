@@ -161,7 +161,69 @@ def test_claude_code_project_files():
     settings = json.loads((ROOT / ".claude" / "settings.json").read_text())
     assert "Read(./.env)" in settings["permissions"]["deny"]
     assert "Bash(./setup.sh)" in settings["permissions"]["allow"]
-    for cmd in ("setup", "analyze", "live", "backtest"):
+    for cmd in ("setup", "analyze", "live", "backtest", "plan"):
         text = (ROOT / ".claude" / "commands" / f"{cmd}.md").read_text()
         assert text.startswith("---") and "description:" in text
     assert "setup.sh" in (ROOT / "CLAUDE.md").read_text()
+
+
+def test_model_cli_works_without_an_api_key(monkeypatch, capsys):
+    from ta_claude import model
+    from ta_claude.model import PriceBar
+    monkeypatch.delenv("ANTHROPIC_API_KEY", raising=False)
+    monkeypatch.setattr(cli, "load_dotenv", lambda *a, **k: None)
+    bars = [PriceBar(f"2026-01-{(i % 28) + 1:02d}", 100 + i) for i in range(80)]
+    monkeypatch.setattr(model, "fetch_daily_history", lambda *a: bars)
+    monkeypatch.setattr(model, "write_trade_plan_dashboard", lambda p: "/plan.html")
+    assert cli.main(["plan", "NVDA", "--rating", "Buy", "--json"]) == 0
+    assert json.loads(capsys.readouterr().out)["action"] == "long"
+
+
+def test_report_plan_is_additive_and_best_effort(monkeypatch, capsys):
+    from ta_claude import model
+    from ta_claude.model import PriceBar
+    monkeypatch.setenv("ANTHROPIC_API_KEY", "x")
+    monkeypatch.setattr(runner, "run_report", lambda *a, **k: {
+        "ticker": "NVDA", "market": "us", "date": "d", "rating": "Buy", "report_dir": "/r",
+        "analysts": [], "replayed": False, "warnings": []})
+    bars = [PriceBar(f"2026-01-{(i % 28) + 1:02d}", 100 + i) for i in range(80)]
+    monkeypatch.setattr(model, "fetch_daily_history", lambda *a: bars)
+    monkeypatch.setattr(model, "write_trade_plan_dashboard", lambda p: "/plan.html")
+    assert cli.main(["report", "NVDA", "--plan", "--json"]) == 0
+    output = json.loads(capsys.readouterr().out)
+    assert output["trade_plan"]["action"] == "long"
+
+
+def test_fx_scan_cli_works_without_an_api_key(monkeypatch, capsys):
+    from ta_claude import model
+    from ta_claude.model import PriceBar
+    monkeypatch.delenv("ANTHROPIC_API_KEY", raising=False)
+    monkeypatch.setattr(cli, "load_dotenv", lambda *a, **k: None)
+    bars = [PriceBar(f"2026-01-{(i % 28) + 1:02d}", 100 + i) for i in range(80)]
+    monkeypatch.setattr(model, "fetch_daily_history", lambda *a: bars)
+    assert cli.main(["fx-scan", "--pairs", "EURUSD", "--json"]) == 0
+    assert json.loads(capsys.readouterr().out)["candidates"][0]["ticker"] == "EURUSD=X"
+
+
+def test_fx_brief_cli_works_without_an_api_key(monkeypatch, capsys):
+    from ta_claude import model
+    from ta_claude.model import PriceBar
+    monkeypatch.delenv("ANTHROPIC_API_KEY", raising=False)
+    monkeypatch.setattr(cli, "load_dotenv", lambda *a, **k: None)
+    bars = [PriceBar(f"2026-01-{(i % 28) + 1:02d}", 100 + i) for i in range(80)]
+    monkeypatch.setattr(model, "fetch_daily_history", lambda *a: bars)
+    assert cli.main(["fx-brief", "EURUSD", "--json"]) == 0
+    output = json.loads(capsys.readouterr().out)
+    assert output["pair"] == "EURUSD=X"
+    assert "no_trade_conditions" in output
+
+
+def test_strategy_suite_cli_works_without_an_api_key(monkeypatch, capsys):
+    from ta_claude import model
+    from ta_claude.model import PriceBar
+    monkeypatch.delenv("ANTHROPIC_API_KEY", raising=False)
+    monkeypatch.setattr(cli, "load_dotenv", lambda *a, **k: None)
+    bars = [PriceBar(f"2026-01-{(i % 28) + 1:02d}", 100 + i, 99 + i, 101 + i, 98 + i) for i in range(120)]
+    monkeypatch.setattr(model, "fetch_daily_history", lambda *a: bars)
+    assert cli.main(["strategy-suite", "EURUSD", "--start", bars[60].day, "--end", bars[-2].day, "--json"]) == 0
+    assert len(json.loads(capsys.readouterr().out)["results"]) == 4

@@ -8,10 +8,10 @@ from tradingagents.default_config import build_default_config
 
 HOME = Path(os.getenv("TA_CLAUDE_HOME", Path.home() / ".ta-claude"))
 
-# Managers (Research Manager, Portfolio Manager) reason on the deep tier; analysts,
-# researchers, debaters and the trader run on the cheaper quick tier.
+# Use the strongest configured Claude model for both tiers by default. Users can opt into
+# a cheaper quick tier explicitly with --quick or TA_QUICK_MODEL.
 DEFAULT_DEEP = "claude-opus-5-5"
-DEFAULT_QUICK = "claude-sonnet-5"
+DEFAULT_QUICK = "claude-opus-5-5"
 
 # Benchmarks the upstream map lacks. Alpha is computed against these.
 EXTRA_BENCHMARKS = {
