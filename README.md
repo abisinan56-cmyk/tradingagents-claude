@@ -115,6 +115,21 @@ Use `report --plan` or `ensemble --plan` to attach this independent plan to an L
 
 `strategy-backtest` simulates the same long/short/flat 20/50 trend rule. A signal uses a completed close and is filled at the following bar open; turnover costs are charged at each position change. Ending positions are marked at the last close without a hypothetical exit cost. The buy-and-hold comparison is measured from the first requested open to the last requested close, before costs. It reports strategy and buy-and-hold returns, drawdown, annualised statistics, and turnover events. It is independent of the LLM training cutoff because it makes no model calls. These outputs are historical research simulations, not investment recommendations or evidence of future performance.
 
+## Free data sources (evaluated, not yet integrated)
+
+The FX commands currently use Yahoo daily bars only. These free sources were checked in November 2026 as candidates for later integration; free tiers change, so re-check before relying on them.
+
+| Source | Free tier | Would improve | Notes |
+|---|---|---|---|
+| ForexFactory weekly calendar JSON (`nfs.faireconomy.media/ff_calendar_thisweek.json`) | No key | Real upcoming high-impact events per currency, replacing the static event checklist | Unofficial feed, no uptime guarantee; cache and poll sparingly |
+| OANDA v20 practice (demo) account | Free account and token | Bid/ask, intraday candles and an explicit `complete` flag per candle, replacing the 48-hour delay | Not offered by every OANDA entity; use read-only pricing and candle endpoints only |
+| Twelve Data Basic | 800 credits/day, 8/minute | Intraday FX candles for the major pairs | Free key |
+| Frankfurter (`api.frankfurter.dev`) | No key | Daily central-bank reference rate to cross-check Yahoo | No candles or spreads; not trading data |
+| Alpha Vantage | 25 requests/day | — | Too small for regular scans |
+| Finnhub | Free key, ~60 calls/minute | Economic calendar and FX candles are advertised | Whether these are on the free plan was not confirmed |
+
+Any keyed source should read its key from your local `.env`, keep Yahoo as the fallback, and never place orders.
+
 ## Live mode
 
 The agents only see Yahoo's data feed, which can lag your screen: DFM and many other non-US venues are delayed. `ta-claude live` takes the price from your screen and reports:
