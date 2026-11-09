@@ -19,10 +19,43 @@ from tradingagents.portfolio import PortfolioContext
 
 from .config import HOME
 from .cutoff import check_dates
+from .llm import use_json_schema_structured_output
 from .markets import Market, backtest_analysts, classify
 from .replay import replay
 
+use_json_schema_structured_output()
+
 DIRECTION = {"Buy": 1, "Overweight": 1, "Hold": 0, "Underweight": -1, "Sell": -1}
+
+# Bump whenever ta-claude changes what the agents are prompted with (not upstream settings), so an
+# older recording is re-run and re-recorded rather than reported as a replay while missing the LLM cache.
+PROMPT_VERSION = "snapshot-v2-json-schema"
+
+
+class _SnapshotMixin:
+    """Adds ta-claude's deterministic technical snapshot to every agent prompt.
+
+    Upstream's Trader is told to ground entry/stop levels in the technical report; feeding the
+    same ATR, support/resistance and 20/50 regime the CLI reports keeps both paths consistent.
+    The snapshot uses bars up to the trade date only, and its fetch is a replay entry point.
+    """
+
+    def resolve_instrument_context(self, ticker, asset_type="stock", trade_date=None):
+        base = super().resolve_instrument_context(ticker, asset_type, trade_date)
+        if not trade_date:
+            return base
+        from .model import technical_snapshot
+        snapshot = technical_snapshot(ticker, trade_date)
+        return f"{base}\n\n{snapshot}" if snapshot else base
+
+
+def _graph_class(base=None):
+    # Resolved per call so tests that swap ``runner.TradingAgentsGraph`` still take effect.
+    return type("TaClaudeGraph", (_SnapshotMixin, base or TradingAgentsGraph), {})
+
+
+def TaClaudeGraph(analysts, config):
+    return _graph_class()(analysts, config=config)
 
 
 def load_portfolio(path: str | None) -> PortfolioContext | None:
@@ -37,7 +70,8 @@ def _replay_path(market: Market, date: str, cfg: dict, analysts: list[str], port
     settings = [cfg[k] for k in ("quick_think_llm", "deep_think_llm", "max_debate_rounds",
                                  "max_risk_discuss_rounds", "temperature", "anthropic_effort",
                                  "output_language")]
-    digest = hashlib.sha256(json.dumps([sorted(analysts), settings, pf], default=str).encode()).hexdigest()[:12]
+    digest = hashlib.sha256(json.dumps([sorted(analysts), settings, pf, PROMPT_VERSION],
+                                       default=str).encode()).hexdigest()[:12]
     safe = "".join(c if c.isalnum() or c in ".-=" else "_" for c in market.symbol)
     return HOME / "replay" / f"{safe}_{date}_{digest}.db"
 
@@ -77,7 +111,7 @@ def run_report(ticker: str, date: str, cfg: dict, analysts: list[str] | None = N
         ctx = replay(db)
     try:
         with ctx:
-            graph = TradingAgentsGraph(analysts, config=run_cfg)
+            graph = TaClaudeGraph(analysts, config=run_cfg)
             state, rating = graph.propagate(market.symbol, date, market.asset_type,
                                             portfolio=load_portfolio(portfolio))
             path = graph.save_reports(state, market.symbol, html=html)
@@ -120,7 +154,7 @@ def run_ensemble(ticker: str, date: str, cfg: dict, n: int = 5, analysts: list[s
     _require_data(market)
     analysts = analysts or market.analysts
     pf = load_portfolio(portfolio)
-    main = TradingAgentsGraph(analysts, config=cfg)
+    main = TaClaudeGraph(analysts, config=cfg)
     main.settle_pending(market.symbol)  # settle once, not once per member
 
     main_log = Path(cfg["memory_log_path"])
@@ -131,7 +165,7 @@ def run_ensemble(ticker: str, date: str, cfg: dict, n: int = 5, analysts: list[s
             if main_log.exists():
                 shutil.copy(main_log, log_copy)
             member_cfg = {**cfg, "memory_log_path": str(log_copy)}
-            state, rating = TradingAgentsGraph(analysts, config=member_cfg).propagate(
+            state, rating = TaClaudeGraph(analysts, config=member_cfg).propagate(
                 market.symbol, date, market.asset_type, portfolio=pf)
             members.append((state, rating))
     finally:
@@ -253,12 +287,18 @@ def run_backtest_job(tickers: list[str], start: str, end: str, every: int, cfg: 
 
     run_id = run_id or f"bt_{start}_{end}_{every}d"
     logs, failures = [], []
-    for (asset_type, analysts), group in by_pipeline.items():
-        result = run_backtest([m.symbol for m in group], dates, cfg, asset_type=asset_type,
-                              portfolio=load_portfolio(portfolio), selected_analysts=list(analysts),
-                              run_id=f"{run_id}_{asset_type}_{'-'.join(analysts)}", progress=progress)
-        logs.append(result.log_path)
-        failures += result.failures
+    import tradingagents.backtest as upstream_backtest
+    original_graph = upstream_backtest.TradingAgentsGraph
+    upstream_backtest.TradingAgentsGraph = _graph_class(original_graph)  # upstream builds its own graph per sweep
+    try:
+        for (asset_type, analysts), group in by_pipeline.items():
+            result = run_backtest([m.symbol for m in group], dates, cfg, asset_type=asset_type,
+                                  portfolio=load_portfolio(portfolio), selected_analysts=list(analysts),
+                                  run_id=f"{run_id}_{asset_type}_{'-'.join(analysts)}", progress=progress)
+            logs.append(result.log_path)
+            failures += result.failures
+    finally:
+        upstream_backtest.TradingAgentsGraph = original_graph
 
     merged = Path(cfg["results_dir"]) / "backtest" / f"{run_id}_merged.md"
     merged.parent.mkdir(parents=True, exist_ok=True)

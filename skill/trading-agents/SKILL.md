@@ -1,6 +1,6 @@
 ---
 name: trading-agents
-description: Run TradingAgents multi-agent analysis on Claude (the ta-claude CLI, or a fast no-API-key chat mode using the browser and web search) for a US stock, DFM or Indian listing, crypto or FX pair - a single report, an ensemble vote with confidence, a look-ahead-safe backtest, a portfolio-aware run, an FX scan/brief/plan/strategy comparison, or a LIVE read of the stock page or trading app the user has open. Use when the user asks to analyse a ticker or currency pair with TradingAgents, get a buy/sell rating, screen FX pairs, test the agents' track record, check a holding against their portfolio, or asks for a live update / "what's it doing now" on a chart they have open.
+description: Run TradingAgents analysis on Claude with no API key (the ta-claude CLI's keyless research pack enriched by Claude desktop connectors such as Firecrawl and Twelve Data, or a browser-and-search chat mode) for a US stock, DFM or Indian listing, crypto or FX pair - a rating with confidence, a strategy track record, a portfolio-aware FX brief, an FX scan/plan/strategy comparison, or a LIVE read of the stock page or trading app the user has open. Use when the user asks to analyse a ticker or currency pair with TradingAgents, get a buy/sell rating, screen FX pairs, test a strategy's track record, check a holding against their portfolio, or asks for a live update / "what's it doing now" on a chart they have open.
 ---
 
 # TradingAgents on Claude
@@ -9,12 +9,16 @@ This skill drives the `ta-claude` CLI from https://github.com/abisinan56-cmyk/tr
 
 ## 0. Where it can run (check silently, pick a mode)
 
-**CLI mode** needs a shell that can reach Yahoo Finance and the Anthropic API, plus `ANTHROPIC_API_KEY`. That usually means Claude Code on the user's own computer.
+**No API key is ever needed.** Never ask the user for one and never read `.env`.
+
+**Keyless CLI mode (default)** needs a shell that can reach Yahoo Finance, such as Claude Code or the Code tab in the Claude desktop app.
 - Find the CLI: `ta-claude`, else `~/.local/bin/ta-claude`, else `~/.ta-claude/venv/bin/ta-claude`. If none works and the repo is cloned, run `./setup.sh` in it (the first run takes a few minutes). If the repo isn't cloned, clone it: it is private, so attach it first if a repo-attach tool exists.
 - Check data access: `python -c "import yfinance as y; print(len(y.Ticker('SPY').history(period='5d')))"` must print a number above 0.
-- The key must be in `.env` or the environment. If it is missing, ask the user to add it to `.env` themselves. Never ask for the key in chat, and never write it anywhere.
+- Run `ta-claude research <T> --json` (seconds, free). It returns the technical snapshot, plan, FX brief for pairs, dated Yahoo headlines with URLs, `calendar_currencies`, `connector_steps` and `analysis_steps`.
+- Enrich it **only with connectors available in this Claude session**, following `connector_steps`: the **Firecrawl** connector to scrape 2–3 of the headline URLs and the economic calendar (forexfactory.com/calendar) for `calendar_currencies`; **Twelve Data** for one live quote; **Claude in Chrome** or web search when a connector is missing. Skip a step if no connector covers it and say so.
+- Then write the analysis yourself following `analysis_steps` (chat-mode step 3 below, same roles and risk rule). Label it "**Keyless TradingAgents (single model + ta-claude data)**".
 
-**Chat mode (no API key, no shell)** is for a claude.ai chat or any session where the CLI can't run. You run the TradingAgents workflow yourself as a single model, with the live price from the Twelve Data connector when it is connected, history and indicators from Yahoo through the browser, and news from web search. It works for every market on Yahoo; for ADX, use the screen read only. Label the result "**Chat-mode TradingAgents (single model, not the ta-claude CLI)**". Mention the CLI command for the full multi-agent run once, briefly, and don't repeat it.
+**Chat mode (no shell)** is for a claude.ai chat or any session where the CLI can't run. You run the TradingAgents workflow yourself as a single model, with the live price from the Twelve Data connector when it is connected, history and indicators from Yahoo through the browser, and news from web search. It works for every market on Yahoo; for ADX, use the screen read only. Label the result "**Chat-mode TradingAgents (single model, not the ta-claude CLI)**". If the user has Claude Code or the desktop Code tab, mention `ta-claude research <T>` once for the deterministic data pack, and don't repeat it.
 
 ### Speed rules (always, in any mode)
 - **No screenshots.** Read pages as text or JSON (`get_page_text`, `javascript_exec`, `find`). Take a screenshot only if text extraction fails, and then once, at scale 0.5.
@@ -56,13 +60,13 @@ This skill drives the `ta-claude` CLI from https://github.com/abisinan56-cmyk/tr
    - flags: divergence over 0.5%, Yahoo lag over 20 minutes, a page "as of" time more than 20 minutes old, ADX not on Yahoo.
 2. **News and macro:** 1–2 web searches, for example "<name> news <this month and year>". For stocks, add one search for latest earnings and valuation, which covers fundamentals. Crypto and FX have no fundamentals step.
 3. **Write the analysis yourself, in TradingAgents order.** Each role gets 1–3 lines, and each line cites the number or source it uses:
-   - **Market/technical analyst:** trend vs the 20/50/200-day averages, RSI, MACD histogram direction, Bollinger position, ATR, distance from the 52-week high and low.
+   - **Market/technical analyst:** the same measures `ta-claude plan` computes, so chat and CLI agree: 20/50-day regime (price above both and SMA20 above SMA50 with positive 20-day momentum = long; the mirror = short; else flat), plus the 200-day average, RSI-14, MACD histogram direction, Bollinger position, ATR-14, the last completed daily candle (bullish/bearish/doji; pin bar, engulfing or inside bar if present), and distance from the 52-week high and low.
    - **News/macro analyst:** dated items only, each with its source.
    - **Fundamentals analyst:** stocks only, from the search.
    - **Sentiment analyst:** skip it and say "no social data in chat mode".
    - **Bull vs bear:** the strongest case each way.
    - **Research manager:** which side wins, and why.
-   - **Trader:** the plan, with invalidation level, trigger level and a stop of about 1–1.5× ATR placed beyond the level plus a buffer.
+   - **Trader:** the plan, with invalidation level and trigger level, using the CLI's risk rule: stop 1.5× ATR-14 beyond the level (never below 0.3% or above 15% of price), target 2× the stop distance, and a model exposure ceiling of min(20%, 1% ÷ stop%) of equity. A flat regime means no entry/stop, not a smaller one.
    - **Risk team:** one line each from the aggressive, conservative and neutral views.
    - **Portfolio manager:** final **Rating: Buy / Overweight / Hold / Underweight / Sell**.
 4. **Reply format:** lead with the rating and price, then key levels, then the role lines, then sources, then: research only, not financial advice.
@@ -82,16 +86,15 @@ You don't remember past chats, so the journal is the memory.
 
 ## 1. Pick the job
 
-| User wants | Command |
+| User wants | Command (all keyless) |
 |---|---|
-| A view on one ticker or pair today or on a date | `ta-claude report <T> [--date YYYY-MM-DD]` |
-| A more reliable call, or "how sure is it" | `ta-claude ensemble <T> -n 5` |
-| "Does it work", or a track record | `ta-claude backtest <T1,T2> --start ... --end ... --every 7` |
-| A view on something they hold | add `--portfolio <file.json>` to any of the above |
-| Rank FX setups now | `ta-claude fx-scan --json` (section 2.4) |
-| One-pair FX brief | `ta-claude fx-brief <PAIR> --json` (section 2.3) |
+| A view on one ticker or pair today or on a date | `ta-claude research <T> [--date YYYY-MM-DD] --json`, enrich with connectors, then write the analysis (section 0) |
+| "How sure is it" | from the same pack: high confidence only when the 20/50 regime, the last candle, RSI/MACD and dated news agree; say "unclear" when they conflict |
+| "Does it work", or a track record | `ta-claude strategy-suite <T> --start ... --end ... --json` (section 2.2) |
+| A view on something they hold | `ta-claude fx-brief <PAIR> --portfolio <file.json> --json` |
+| Rank FX setups now | `ta-claude fx-scan --with-news --json` (section 2.4) |
+| One-pair FX brief | `ta-claude fx-brief <PAIR> --with-news --json` (section 2.3) |
 | Price-only research plan | `ta-claude plan <T> --rating <rating> --json` (section 2.5) |
-| Compare strategy families | `ta-claude strategy-suite <PAIR> --start ... --end ... --json` (section 2.2) |
 | **"Live", "now", "update me", or "what's it doing", on a page or app they have open** | **Live mode, section 2** |
 
 If the market is unclear, run `ta-claude market <T>` first. It is free.
@@ -103,7 +106,7 @@ Ticker forms:
 - Crypto: `BTC-USD`
 - FX: `EURUSD` (becomes `EURUSD=X`)
 
-**Abu Dhabi (ADX) stocks are not on Yahoo,** so `report`, `ensemble` and `backtest` refuse them. Only live mode works for ADX, as a screen-based read.
+**Abu Dhabi (ADX) stocks are not on Yahoo,** so `research` refuses them. Only live mode works for ADX, as a screen-based read.
 
 ## 2. Live mode
 
@@ -123,9 +126,9 @@ Live mode is read-only. Never click Buy, Sell or order buttons, never place or m
 3. **Write `quote.json`** in the working directory:
    `{"symbol": "...", "price": 0, "change_pct": 0, "currency": "...", "source": "<url or app>", "captured_at": "<the time you read it, ISO with timezone>", "screen_time": "<the page's own 'as of' time, ISO, if shown>"}`
    - `captured_at` is when you read the screen, never the page's timestamp. The page's timestamp goes in `screen_time`; that is how a stale page gets caught.
-4. **Quick check** (seconds, no API cost): `ta-claude live <T> --quote quote.json --json`. In chat mode, compute it in the browser instead, as described in section 0.
-5. **Fresh analysis**, only when asked for one (or when the flags say there is no rating, or it is more than a day old) and the user says yes:
-   - Run `ta-claude live <T> --quote quote.json --full --json`. This takes several minutes and costs API usage.
+4. **Quick check** (seconds, free): `ta-claude live <T> --quote quote.json --json`. In chat mode, compute it in the browser instead, as described in section 0.
+5. **Fresh analysis**, only when asked for one (or when the flags say there is no rating, or it is more than a day old):
+   - Run `ta-claude live <T> --quote quote.json --full --json`. It attaches a keyless research pack as `fresh_run`; enrich it with connectors and write the analysis as in section 0.
    - **Re-read the page when it finishes,** then re-run the quick check, so the final price reflects the screen at the end of the run, not the start.
 6. **Reply (short):**
    - Screen price and source.
@@ -136,45 +139,37 @@ Live mode is read-only. Never click Buy, Sell or order buttons, never place or m
    - If divergence is over 0.5% or Yahoo lags by more than 20 minutes, say plainly that the agents analysed delayed data.
 7. **"Update" / "again":** repeat steps 2–4 on the same tab. Run a full analysis again only on request. For repeating updates on a timer, offer a scheduled task rather than looping.
 
-**Sections 2.2–2.5 are CLI-mode commands.** They need a shell that can reach Yahoo, such as Claude Code on the user's machine, but no API key unless `--with-news` is used. In a claude.ai chat, use chat mode (section 0) instead, and give the exact command to run locally when a deterministic plan, scan or backtest is wanted.
+**Sections 2.2–2.5 are CLI-mode commands.** They need a shell that can reach Yahoo, such as Claude Code or the Code tab in the Claude desktop app, and no API key. In a claude.ai chat, use chat mode (section 0) instead, and give the exact command to run locally when a deterministic plan, scan or backtest is wanted.
 
 ## 2.2 Strategy comparison
 - Use `ta-claude strategy-suite <PAIR> --start <date> --end <date> --json` to compare the fixed trend, mean-reversion, breakout, and RSI-momentum models under the same completed-bar, next-open execution and simplified turnover-cost rules. Report every result with drawdown and buy-and-hold, not just the highest in-sample return. Do not call it an exhaustive strategy set or a recommendation.
 
 ## 2.3 FX decision-support brief
 - For a single pair, use `ta-claude fx-brief <PAIR> --json`; add `--portfolio <file>` only when the user explicitly supplies a portfolio file. The brief presents a technical regime, conditional bullish/bearish/no-trade scenarios, scheduled-event checklist, non-personalised risk assumptions, declared-FX currency overlap, and completed-daily-bar candle/price-action analysis (OHLC, patterns, RSI, MACD, ATR, Bollinger bands, and support/resistance).
-- Use `--with-news` only for a requested fresh multi-agent news pass; it costs an API run. Clearly distinguish observed/news-research evidence from the static event checklist. Never call this personalised advice, a guaranteed outcome, or an instruction to execute a trade.
+- `--with-news` attaches dated Yahoo headlines (with URLs), `calendar_currencies` and `connector_steps` at no cost. Enrich them with the Firecrawl connector (2–3 articles and the calendar) when connected. Clearly distinguish observed news and calendar evidence from the static event checklist. Never call this personalised advice, a guaranteed outcome, or an instruction to execute a trade.
 
 ## 2.4 FX opportunity scan
 - To compare major FX research setups at the time of the request, run `ta-claude fx-scan --json`. It ranks EUR/USD, GBP/USD, USD/JPY, USD/CHF, USD/CAD, AUD/USD, and NZD/USD from completed Yahoo daily bars, then returns timestamped reference risk levels and freshness limitations.
-- `ta-claude fx-scan --with-news --json` spends one full multi-agent run on the top directional candidate and adds fresh market/news research. It does not cover all news, and it must not be described as a guaranteed best trade. Report the selected pair, setup, data time, price-only limitations, news-research report path, and all warnings.
+- `ta-claude fx-scan --with-news --json` adds the keyless headlines for the top directional candidate; enrich them with connectors as in section 0. It does not cover all news, and it must not be described as a guaranteed best trade. Report the selected pair, setup, data time, price-only limitations, the news used with dates and sources, and all warnings.
 
 ## 2.5 Deterministic trading-model research
-- For a transparent price-only research plan, run `ta-claude plan <T> --rating <rating> --json`. It requires no API key, reads completed Yahoo daily bars, and writes an HTML dashboard. State the action, trend rule, reference levels, and warnings without framing them as instructions to trade.
-- For the fixed 20/50 trend simulation, run `ta-claude strategy-backtest <T> --start <date> --end <date> --json`. It has no LLM cost and no model-cutoff restriction, but it is still historical research. Report its return alongside buy-and-hold, max drawdown, costs, and the warning that past results do not establish an edge.
-- Use `report --plan` or `ensemble --plan` only when the user wants the deterministic plan attached to LLM research. If their directions disagree, call that out rather than choosing one silently.
+- For a transparent price-only research plan, run `ta-claude plan <T> --rating <rating> --json`. It reads completed Yahoo daily bars and writes an HTML dashboard. State the action, trend rule, reference levels, and warnings without framing them as instructions to trade.
+- For the fixed 20/50 trend simulation, run `ta-claude strategy-backtest <T> --start <date> --end <date> --json`. It has no model-cutoff restriction, but it is still historical research. Report its return alongside buy-and-hold, max drawdown, costs, and the warning that past results do not establish an edge.
+- If your written rating and `ta-claude plan` disagree, call that out rather than choosing one silently.
 
-## 3. Guardrails before spending money
-- **Cost:** a backtest costs about (tickers × dates) times a single report, and an ensemble costs about N times a single report. Both tiers now default to Opus 5.5, so each run costs more than with a cheaper analyst tier; mention `--quick` for a cheaper analyst model when cost matters. Before any backtest over 10 cells, any ensemble with n over 5, any `live --full` or any `--with-news`, state the cost and get a yes.
-- **Backtest dates:** every date must fall after the model cutoff, 2026-06-30 for the default models. If the user asks for earlier dates, explain the look-ahead problem. Use `--allow-contaminated` only if they insist, and label the results contaminated.
+## 3. Guardrails
+- **Connector use:** keep it light, about 2–3 Firecrawl scrapes and one Twelve Data quote per analysis. Free connector quotas are limited; if one is refused, fall back to Claude in Chrome or web search and say so.
+- **Backtest dates:** `strategy-suite` and `strategy-backtest` make no model calls, so any historical range is fine; a written analysis for a past date must use only information dated on or before it.
 - **Portfolio JSON:** the shape is `{"cash": 0, "currency": "USD", "positions": [{"ticker": "...", "quantity": 0, "average_price": 0}]}`. If the user describes their holdings in words, write the file, show it, and confirm it before running. An empty `positions` list means a flat book, which is not the same as passing no file.
 - **FX pegged pairs** (USDAED, USDSAR and similar): warn that signals will be noise before running.
 
 ## 4. Run
-- Add `--json` and parse the output.
-- Runs take minutes. Use a background command, and do not re-launch a run that is already in progress.
-- `report` records the first run and replays it afterwards. Re-running the same ticker, date and settings is free and identical (`"replayed": true`). Use `--no-replay` for a fresh sample. `live --full` never replays.
+- Add `--json` and parse the output. Keyless commands take seconds; no background run is needed.
+- The `technical_snapshot` in the research pack uses only bars up to the analysis date. Cite its numbers, and flag any conflict with a connector source rather than inventing a reconciled number.
 
 ## 5. Report back (short)
-- **report:** the rating, a 3-line summary taken from the saved report's final decision, the path to `complete_report.html`, and any market notes.
-- **ensemble:** the rating, the agreement percentage and confidence, and the vote split. If confidence is low, say the call is not clear rather than presenting the rating as firm.
-- **backtest:**
-  1. Scored count first.
-  2. Net mean per decision with its CI. If the CI spans zero, say there is no evidence of an edge.
-  3. Hit rate.
-  4. Baselines (always-long, benchmark, random).
-  5. Every note, including the cutoff and the small-sample warnings.
-  Never describe a backtest as profitable without comparing it to the baselines.
+- **analysis (research pack):** lead with the rating and price with its data time, then key levels, then the role lines, then sources (Yahoo, and each connector used), then the warnings.
+- **strategy-suite:** every strategy's return and drawdown next to buy-and-hold, then every note. Never describe a strategy as profitable without that comparison.
 - **live:** see section 2, step 6.
 - Close with the research-only disclaimer. Never turn a rating into an instruction to trade, and never execute a trade even if asked; the user does that themselves.
 

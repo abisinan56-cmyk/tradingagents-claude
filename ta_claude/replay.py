@@ -77,6 +77,7 @@ DATA_ENTRY_POINTS = (
     ("tradingagents.agents.analysts.sentiment_analyst", "fetch_reddit_posts"),
     ("tradingagents.agents.analysts.sentiment_analyst", "fetch_stocktwits_messages"),
     ("tradingagents.agents.context", "get_company_profile"),            # instrument identity
+    ("ta_claude.model", "fetch_daily_rows"),                            # deterministic technical snapshot
 )
 
 

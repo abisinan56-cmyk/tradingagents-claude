@@ -110,9 +110,8 @@ def parse_yahoo_chart(payload: dict, *, now: datetime | None = None) -> list[Pri
     return bars
 
 
-def fetch_daily_history(ticker: str, start: str, end: str) -> list[PriceBar]:
-    """Fetch adjusted daily closes from Yahoo, retaining enough warm-up history."""
-    symbol = classify(ticker).symbol
+def fetch_daily_rows(symbol: str, start: str, end: str) -> list[dict]:
+    """Fetch Yahoo daily bars as JSON rows; registered as a replay data entry point."""
     start_day = date.fromisoformat(start) - timedelta(days=400)
     end_day = date.fromisoformat(end) + timedelta(days=1)
     params = urlencode({"period1": int(datetime.combine(start_day, datetime.min.time(), timezone.utc).timestamp()),
@@ -121,11 +120,19 @@ def fetch_daily_history(ticker: str, start: str, end: str) -> list[PriceBar]:
     url = f"https://query1.finance.yahoo.com/v8/finance/chart/{symbol}?{params}"
     try:
         with urlopen(Request(url, headers={"User-Agent": "ta-claude/0.1"}), timeout=15) as response:
-            return parse_yahoo_chart(json.load(response))
+            return [asdict(bar) for bar in parse_yahoo_chart(json.load(response))]
     except ValueError:
         raise
     except Exception as exc:
         raise ValueError(f"Could not fetch Yahoo daily history for {symbol}: {exc}") from exc
+
+
+def fetch_daily_history(ticker: str, start: str, end: str) -> list[PriceBar]:
+    """Completed, consistently adjusted daily bars up to and including ``end``."""
+    symbol = classify(ticker).symbol
+    bars = [PriceBar(**row) for row in fetch_daily_rows(symbol, start, end)]
+    # Yahoo can return a bar dated after period2 on exchange-timezone boundaries.
+    return [bar for bar in bars if bar.day <= end]
 
 
 def _mean(values: list[float]) -> float:
@@ -153,6 +160,16 @@ def _daily_volatility(closes: list[float]) -> float:
     return pstdev(returns) if len(returns) > 1 else 0.01
 
 
+def _atr_pct(bars: list[PriceBar], period: int = 14) -> float | None:
+    """ATR(period) as a fraction of the last close, or None when OHLC is missing."""
+    window = bars[-period - 1:]
+    if len(window) < period + 1 or any(b.high is None or b.low is None for b in window):
+        return None
+    ranges = [max(b.high - b.low, abs(b.high - prior.close), abs(b.low - prior.close))
+              for prior, b in zip(window[:-1], window[1:])]
+    return _mean(ranges) / bars[-1].close
+
+
 def build_trade_plan(ticker: str, bars: list[PriceBar], source_rating: str | None = None) -> TradePlan:
     """Build a transparent model plan from a rating label and completed price bars."""
     market = classify(ticker)
@@ -169,7 +186,10 @@ def build_trade_plan(ticker: str, bars: list[PriceBar], source_rating: str | Non
     if source_rating in {"Hold", "REVIEW"}:
         action = "flat"
     volatility = _daily_volatility(closes)
-    stop_pct = min(0.15, max(0.02, 2 * volatility)) if action != "flat" else None
+    atr_pct = _atr_pct(bars)
+    # 1.5x ATR(14) when OHLC exists, else 2x daily close volatility; floor suits FX, cap suits stocks.
+    stop_pct = (min(0.15, max(0.003, 1.5 * atr_pct if atr_pct else 2 * volatility))
+                if action != "flat" else None)
     price = closes[-1]
     stop = target = None
     if action == "long":
@@ -179,13 +199,15 @@ def build_trade_plan(ticker: str, bars: list[PriceBar], source_rating: str | Non
     confidence = "high" if rating_action == action and action != "flat" else "medium" if action != "flat" else "low"
     cap = 0.0 if action == "flat" else min(0.20, 0.01 / stop_pct)
     rationale = [f"Close {price:.4g}; 20-day average {fast:.4g}; 50-day average {slow:.4g}.",
-                 f"20-day momentum is {momentum:+.2%}; daily volatility estimate is {volatility:.2%}."]
+                 f"20-day momentum is {momentum:+.2%}; daily volatility estimate is {volatility:.2%}.",
+                 (f"Risk distance is 1.5x ATR(14) = {1.5 * atr_pct:.2%} of price." if atr_pct
+                  else "No OHLC data: risk distance is 2x daily close volatility.")]
     if source_rating:
         rationale.append(f"Research rating input: {source_rating}.")
     return TradePlan(market.symbol, bars[-1].day, source_rating, action, confidence, round(price, 6),
                      round(stop, 6) if stop else None, round(target, 6) if target else None,
                      round(stop_pct * 100, 3) if stop_pct else None, round(cap * 100, 2), "20 trading days",
-                     "20/50-day trend with 20-day momentum", rationale, warnings)
+                     "20/50-day trend with 20-day momentum; stop 1.5x ATR(14), target 2x stop", rationale, warnings)
 
 
 def backtest_trend(ticker: str, bars: list[PriceBar], start: str, end: str, fast_window: int = 20,
@@ -242,11 +264,13 @@ def scan_fx(pairs: list[str] | tuple[str, ...] = MAJOR_FX_PAIRS) -> FXScan:
             closes = [bar.close for bar in bars]
             _, _, _, momentum = _signal(closes)
             volatility = _daily_volatility(closes)
-            strength = abs(momentum) / volatility if volatility else 0.0
-            candidates.append({**asdict(plan), "trend_strength": round(strength, 3)})
+            # Momentum in daily-volatility units; inflated in quiet markets when the
+            # 20/50 alignment failed, so flat pairs get None rather than a misleading number.
+            strength = round(abs(momentum) / volatility, 3) if volatility and plan.action != "flat" else None
+            candidates.append({**asdict(plan), "trend_strength": strength})
         except ValueError as exc:
             unavailable[pair] = str(exc)
-    candidates.sort(key=lambda item: (item["action"] == "flat", -item["trend_strength"], item["ticker"]))
+    candidates.sort(key=lambda item: (item["action"] == "flat", -(item["trend_strength"] or 0.0), item["ticker"]))
     for rank, candidate in enumerate(candidates, start=1):
         candidate["rank"] = rank
     if not candidates:
@@ -465,3 +489,34 @@ def backtest_strategy_suite(ticker: str, bars: list[PriceBar], start: str, end: 
     """Compare four complementary, documented daily-bar signal families."""
     results = [backtest_strategy(ticker, bars, start, end, strategy, cost_bps) for strategy in STRATEGIES]
     return StrategySuite(classify(ticker).symbol, start, end, cost_bps, results)
+
+
+def technical_snapshot(ticker: str, trade_date: str) -> str | None:
+    """Compact deterministic snapshot for agent prompts, from bars up to ``trade_date`` only.
+
+    Returns None when data is unavailable so an agent run never fails on it.
+    """
+    try:
+        start = (date.fromisoformat(trade_date) - timedelta(days=730)).isoformat()
+        bars = fetch_daily_history(ticker, start, trade_date)
+        plan = build_trade_plan(ticker, bars)
+        tech = technical_analysis(bars)
+    except ValueError:
+        return None
+    candle, trend, mom, vol, lv = (tech["last_candle"], tech["trend"], tech["momentum"],
+                                   tech["volatility"], tech["levels"])
+    lines = [
+        f"Deterministic technical snapshot computed by ta-claude from completed daily bars through {plan.as_of} "
+        "(no bar after the analysis date was used). Treat it as a cross-check: cite these values, flag any "
+        "conflict with tool output instead of inventing a reconciled number, and do not treat it as a recommendation.",
+        f"- Close {candle['close']}; SMA20 {trend['sma_20']}; SMA50 {trend['sma_50']}; 20/50 trend regime: {plan.action}.",
+        f"- Last candle {candle['direction']} ({', '.join(candle['patterns'])}); RSI14 {mom['rsi_14']}; "
+        f"MACD histogram {mom['macd_histogram']}.",
+        f"- ATR14 {vol['atr_14']} ({vol['atr_14_pct']}% of price); Bollinger {vol['bollinger_lower']}-"
+        f"{vol['bollinger_upper']}; 20-bar support {lv['support_20']} / resistance {lv['resistance_20']}.",
+    ]
+    if plan.action != "flat":
+        lines.append(f"- Model reference levels ({plan.technical_signal}): entry {plan.entry_reference}, "
+                     f"stop {plan.stop_reference}, target {plan.target_reference}, "
+                     f"risk {plan.risk_per_unit_pct}% per unit.")
+    return "\n".join(lines)

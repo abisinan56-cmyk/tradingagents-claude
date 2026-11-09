@@ -88,7 +88,9 @@ def test_cli_live(monkeypatch, capsys, tmp_path):
     assert out["symbol"] == "EMAAR.AE" and out["screen_vs_yahoo_pct"] == 0 and out["fresh_run"] is None
     monkeypatch.delenv("ANTHROPIC_API_KEY", raising=False)
     monkeypatch.setattr(cli, "load_dotenv", lambda *a, **k: None)
-    assert cli.main(["live", "EMAAR.AE", "--price", "12.3", "--full"]) == 2
+    monkeypatch.setattr(cli, "_research_pack", lambda t, d: {"mode": "keyless", "as_of": d, "news": []})
+    assert cli.main(["live", "EMAAR.AE", "--price", "12.3", "--full", "--json"]) == 0
+    assert json.loads(capsys.readouterr().out)["fresh_run"]["mode"] == "keyless"
 
 
 def test_adx_refused_for_agent_runs(tmp_path):
