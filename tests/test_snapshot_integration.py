@@ -84,3 +84,13 @@ def test_scan_reports_strength_only_for_directional_pairs(monkeypatch):
     assert [c["ticker"] for c in scan.candidates] == ["EURUSD=X", "GBPUSD=X"]
     assert scan.candidates[0]["trend_strength"] > 0
     assert scan.candidates[1]["action"] == "flat" and scan.candidates[1]["trend_strength"] is None
+
+
+def test_replay_path_changes_with_prompt_version(monkeypatch):
+    from ta_claude.config import build_config
+    from ta_claude.markets import classify
+    cfg = build_config()
+    before = runner._replay_path(classify("EURUSD"), "2026-11-06", cfg, ["market"], None)
+    monkeypatch.setattr(runner, "PROMPT_VERSION", "other")
+    after = runner._replay_path(classify("EURUSD"), "2026-11-06", cfg, ["market"], None)
+    assert before != after

@@ -24,6 +24,10 @@ from .replay import replay
 
 DIRECTION = {"Buy": 1, "Overweight": 1, "Hold": 0, "Underweight": -1, "Sell": -1}
 
+# Bump whenever ta-claude changes what the agents are prompted with (not upstream settings), so an
+# older recording is re-run and re-recorded rather than reported as a replay while missing the LLM cache.
+PROMPT_VERSION = "snapshot-v1"
+
 
 class _SnapshotMixin:
     """Adds ta-claude's deterministic technical snapshot to every agent prompt.
@@ -63,7 +67,8 @@ def _replay_path(market: Market, date: str, cfg: dict, analysts: list[str], port
     settings = [cfg[k] for k in ("quick_think_llm", "deep_think_llm", "max_debate_rounds",
                                  "max_risk_discuss_rounds", "temperature", "anthropic_effort",
                                  "output_language")]
-    digest = hashlib.sha256(json.dumps([sorted(analysts), settings, pf], default=str).encode()).hexdigest()[:12]
+    digest = hashlib.sha256(json.dumps([sorted(analysts), settings, pf, PROMPT_VERSION],
+                                       default=str).encode()).hexdigest()[:12]
     safe = "".join(c if c.isalnum() or c in ".-=" else "_" for c in market.symbol)
     return HOME / "replay" / f"{safe}_{date}_{digest}.db"
 
