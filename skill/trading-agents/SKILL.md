@@ -73,7 +73,8 @@ This skill drives the `ta-claude` CLI from https://github.com/abisinan56-cmyk/tr
 
 ## Journal and learning (every mode)
 You don't remember past chats, so the journal is the memory.
-- **Before any analysis or trade idea,** read the trade journal if one exists: the project doc `claude/trade-journal.md` (use the Projects tool), or else `~/.ta-claude/memory/trading_memory.md` in CLI mode. Apply its lessons, risk rule and open trades, and mention any open trade on the same pair or the same currency direction.
+- **In CLI mode the journal is `ta-claude journal`** (`~/.ta-claude/journal.jsonl`): `ta-claude risk <T> --record` writes a plan that passed, and `ta-claude journal score` scores every finished plan against the real bars that followed (target first, stop first, or R at the end of the window). Run `journal score` at the start of a session and read back the summary; mention any open entry on the same pair or the same currency direction.
+- **In chat mode,** the journal is the project doc `claude/trade-journal.md` (use the Projects tool), or else `~/.ta-claude/memory/trading_memory.md`. Apply its lessons, risk rule and open trades.
 - **Size every idea** from the journal's risk rule (default 1% of equity): lots = (equity × risk) ÷ (stop pips × pip value per lot). Pip value is $10 per lot for XXX/USD pairs, and $10 ÷ price for USD/XXX pairs.
 - **When the user reports an entry, exit, fill, cancel or result,** update the journal in the same turn:
   - the trade row (exit, result, R = P/L ÷ amount risked);
@@ -95,6 +96,9 @@ You don't remember past chats, so the journal is the memory.
 | Rank FX setups now | `ta-claude fx-scan --with-news --json` (section 2.4) |
 | One-pair FX brief | `ta-claude fx-brief <PAIR> --with-news --json` (section 2.3) |
 | Price-only research plan | `ta-claude plan <T> --rating <rating> --json` (section 2.5) |
+| "What are the odds", "replay it", "is it a coin flip" | `ta-claude timemachine <T> --json` (section 2.6) |
+| "Can I take this", "check it against my rules", "size it" | `ta-claude risk <T> --with-timemachine --json` (section 2.6) |
+| "Journal it", "how am I doing", track record of taken plans | `ta-claude risk ... --record`, `ta-claude journal score` (section 2.6) |
 | **"Live", "now", "update me", or "what's it doing", on a page or app they have open** | **Live mode, section 2** |
 
 If the market is unclear, run `ta-claude market <T>` first. It is free.
@@ -157,6 +161,13 @@ Live mode is read-only. Never click Buy, Sell or order buttons, never place or m
 - For the fixed 20/50 trend simulation, run `ta-claude strategy-backtest <T> --start <date> --end <date> --json`. It has no model-cutoff restriction, but it is still historical research. Report its return alongside buy-and-hold, max drawdown, costs, and the warning that past results do not establish an edge.
 - If your written rating and `ta-claude plan` disagree, call that out rather than choosing one silently.
 
+## 2.6 Look before you risk: time machine, risk check, journal
+Run these in order for any directional idea, before the user acts on it. All keyless, seconds each. Adapted from the day-trader-skill pack (MIT).
+1. **`ta-claude timemachine <T> --json`** replays the plan's stop/target race 10,000 times from the instrument's own recent daily bars (seed 19, repeatable) and re-runs the same 20/50 rule on every past day it fired with real bars. Read back exactly: target first %, stop first %, neither %, average R, the history counts, and the one-line verdict. Say the seed. If the verdict is "close to a coin flip", "close to break-even" or "leans toward the stop", say so plainly and do not soften it. A simulation, not a prediction: it cannot contain an event the recent bars never saw.
+2. **`ta-claude risk <T> --with-timemachine --json`** checks the plan against the user's limits in `~/.ta-claude/risk.json` (defaults: 5,000 budget, 1% max loss per trade, 3% daily loss, 3 trades a day, reward:risk at least 1.5, 20% position cap, no new exposure within 24h of a high-impact event). It prints **PASS** with the size that fits (units and loss at the stop) or **BLOCK** with every reason. Pass the connector's calendar as `--calendar events.json` (a list of `{currency, title, hours_away}`) so the event rule can fire. Never loosen a limit to turn a BLOCK into a PASS; tell the user the fix (a wider target, a smaller size, wait for the event) and let them change `risk.json` themselves.
+3. **`ta-claude risk <T> --with-timemachine --record --note "..."`** journals a plan that passed. Nothing here places an order: the user acts in their own broker, if at all.
+4. **Later, `ta-claude journal score`** scores finished entries and summarises. Under 30 scored entries is too few to call the rule an edge; say so.
+
 ## 3. Guardrails
 - **Connector use:** keep it light, about 2–3 Firecrawl scrapes and one Twelve Data quote per analysis. Free connector quotas are limited; if one is refused, fall back to Claude in Chrome or web search and say so.
 - **Backtest dates:** `strategy-suite` and `strategy-backtest` make no model calls, so any historical range is fine; a written analysis for a past date must use only information dated on or before it.
@@ -168,7 +179,9 @@ Live mode is read-only. Never click Buy, Sell or order buttons, never place or m
 - The `technical_snapshot` in the research pack uses only bars up to the analysis date. Cite its numbers, and flag any conflict with a connector source rather than inventing a reconciled number.
 
 ## 5. Report back (short)
-- **analysis (research pack):** lead with the rating and price with its data time, then key levels, then the role lines, then sources (Yahoo, and each connector used), then the warnings.
+- **analysis (research pack):** lead with the rating and price with its data time, then key levels, then the role lines, then sources (Yahoo, and each connector used), then the warnings. For a directional rating, follow with the time machine verdict and the risk PASS/BLOCK (section 2.6) before the user acts.
+- **timemachine:** the four odds, average R, the history counts, the verdict word for word, the seed, and the "simulation, not a prediction" note.
+- **risk:** PASS with units and loss at the stop, or BLOCK with every reason; never a suggestion to loosen a limit.
 - **strategy-suite:** every strategy's return and drawdown next to buy-and-hold, then every note. Never describe a strategy as profitable without that comparison.
 - **live:** see section 2, step 6.
 - Close with the research-only disclaimer. Never turn a rating into an instruction to trade, and never execute a trade even if asked; the user does that themselves.

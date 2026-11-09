@@ -37,8 +37,11 @@ Quick map:
 | News for the top FX candidate | `ta-claude fx-scan --with-news --json` |
 | Structured FX research brief | `ta-claude fx-brief EURUSD --json` |
 | News on an FX brief | `ta-claude fx-brief EURUSD --with-news --json` |
+| Odds of a plan ("replay it", "coin flip?") | `ta-claude timemachine <T> --json` |
+| Rules check and size ("can I take this?") | `ta-claude risk <T> --with-timemachine --json`; `--record` to journal a PASS |
+| Track record of taken plans | `ta-claude journal score` |
 
-Every command above works with no API key.
+Every command above works with no API key. For any directional rating, run `timemachine` and `risk` before the user acts, and never loosen a limit in `~/.ta-claude/risk.json` yourself.
 
 Tickers:
 - US: `NVDA`
@@ -65,6 +68,9 @@ Rules:
   - `runner.py` also defines `TaClaudeGraph`, the upstream graph plus that snapshot in every agent prompt
   - `llm.py`: makes upstream's structured agents use Anthropic `json_schema` output (applied when `runner` loads); bump `runner.PROMPT_VERSION` whenever prompts or LLM request shape change
   - `research.py`: keyless research pack (Yahoo data, snapshot, plan, FX brief, dated headlines, connector and analysis steps)
+  - `timemachine.py`: replay a plan's stop/target race from the instrument's own daily bars, plus the rule's real history and a verdict
+  - `risk.py`: PASS/BLOCK a plan against `~/.ta-claude/risk.json` limits (loss per trade, daily loss, trades/day, R:R, position cap, event window)
+  - `journal.py`: record passed plans and score them later against real bars
   - `markets.py`: ticker classification
   - `cutoff.py`: look-ahead guard
   - `config.py`: Claude models and benchmarks
