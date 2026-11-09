@@ -131,6 +131,8 @@ Live mode is read-only. Never click Buy, Sell or order buttons, never place or m
    - If divergence is over 0.5% or Yahoo lags by more than 20 minutes, say plainly that the agents analysed delayed data.
 7. **"Update" / "again":** repeat steps 2–4 on the same tab. Run a full analysis again only on request. For repeating updates on a timer, offer a scheduled task rather than looping.
 
+**Sections 2.2–2.5 are CLI-mode commands.** They need a shell that can reach Yahoo, such as Claude Code on the user's machine, but no API key unless `--with-news` is used. In a claude.ai chat, use chat mode (section 0) instead, and give the exact command to run locally when a deterministic plan, scan or backtest is wanted.
+
 ## 2.2 Strategy comparison
 - Use `ta-claude strategy-suite <PAIR> --start <date> --end <date> --json` to compare the fixed trend, mean-reversion, breakout, and RSI-momentum models under the same completed-bar, next-open execution and simplified turnover-cost rules. Report every result with drawdown and buy-and-hold, not just the highest in-sample return. Do not call it an exhaustive strategy set or a recommendation.
 
