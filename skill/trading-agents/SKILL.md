@@ -1,6 +1,6 @@
 ---
 name: trading-agents
-description: Run TradingAgents multi-agent analysis on Claude (the ta-claude CLI, or a fast no-API-key chat mode using the browser and web search) for a US stock, DFM or Indian listing, crypto or FX pair - a single report, an ensemble vote with confidence, a look-ahead-safe backtest, a portfolio-aware run, or a LIVE read of the stock page or trading app the user has open. Use when the user asks to analyse a ticker or currency pair with TradingAgents, get a buy/sell rating, test the agents' track record, check a holding against their portfolio, or asks for a live update / "what's it doing now" on a chart they have open.
+description: Run TradingAgents multi-agent analysis on Claude (the ta-claude CLI, or a fast no-API-key chat mode using the browser and web search) for a US stock, DFM or Indian listing, crypto or FX pair - a single report, an ensemble vote with confidence, a look-ahead-safe backtest, a portfolio-aware run, an FX scan/brief/plan/strategy comparison, or a LIVE read of the stock page or trading app the user has open. Use when the user asks to analyse a ticker or currency pair with TradingAgents, get a buy/sell rating, screen FX pairs, test the agents' track record, check a holding against their portfolio, or asks for a live update / "what's it doing now" on a chart they have open.
 ---
 
 # TradingAgents on Claude
@@ -31,7 +31,7 @@ This skill drives the `ta-claude` CLI from https://github.com/abisinan56-cmyk/tr
    - If a Twelve Data call is refused for limits, fall back to Yahoo. Say which source each number came from.
    - If the two sources differ on an indicator (their daily forex bars can differ), say so in one line.
    - Check `get_api_usage` only when the user asks or a call fails.
-   - **Free-plan cap: 8 credits per minute.** One call is one credit, and the connector rejects comma-separated multi-symbol requests. Never send more than 7 calls in one round. For a multi-pair screen without the browser, pace rounds: after each round of 7 or fewer, wait about 62 seconds with a background `sleep 62` (a foreground sleep is blocked), and tell the user it takes about 1 minute per round. A screen of 6 pairs at 5 indicators each is 30 credits, about 4 rounds. With the browser available, use Yahoo instead: every pair in one `javascript_exec` (fetch each chart URL from the same Yahoo origin), free and instant.
+   - **Free-plan cap: 8 credits per minute.** One call is one credit, and the connector rejects comma-separated multi-symbol requests. Never send more than 7 calls in one round. For a multi-pair screen without the browser, pace rounds: after each round of 7 or fewer, wait about 62 seconds with a background `sleep 62` (a foreground sleep is blocked), and tell the user it takes about 1 minute per round. A screen of 6 pairs at 5 indicators each is 30 credits, about 4 rounds. With the browser available, use Yahoo instead: every pair in one `javascript_exec` (fetch each chart URL from the same Yahoo origin, and use top-level `await`), free and instant. Return compact text, one line per pair, so the output isn't truncated.
    - **Yahoo through the browser:** one `browser_batch`. Navigate to `https://query1.finance.yahoo.com/v8/finance/chart/<YAHOO_SYMBOL>?range=1y&interval=1d`, then run this with `javascript_exec`:
 ```js
 (() => { const j=JSON.parse(document.body.innerText).chart.result[0], q=j.indicators.quote[0], m=j.meta;
@@ -62,7 +62,7 @@ This skill drives the `ta-claude` CLI from https://github.com/abisinan56-cmyk/tr
    - **Sentiment analyst:** skip it and say "no social data in chat mode".
    - **Bull vs bear:** the strongest case each way.
    - **Research manager:** which side wins, and why.
-   - **Trader:** the plan, with invalidation level, trigger level and a stop of about 1–1.5× ATR.
+   - **Trader:** the plan, with invalidation level, trigger level and a stop of about 1–1.5× ATR placed beyond the level plus a buffer.
    - **Risk team:** one line each from the aggressive, conservative and neutral views.
    - **Portfolio manager:** final **Rating: Buy / Overweight / Hold / Underweight / Sell**.
 4. **Reply format:** lead with the rating and price, then key levels, then the role lines, then sources, then: research only, not financial advice.
@@ -76,6 +76,7 @@ You don't remember past chats, so the journal is the memory.
   - the running stats;
   - one new lesson, only if the trade taught something not already listed.
   Ask for any missing exit price or P/L rather than guessing, and mark estimates as estimates.
+- **When the user sends a trade screenshot,** check the levels digit by digit against the plan (entry, stop, target, size) and flag any mismatch.
 - **About once a week, or when asked,** add a dated market-regime snapshot (trend and momentum per pair) so later chats can see how the trends changed.
 - Never present the journal's win rate as proof of an edge under 30 closed trades.
 
@@ -87,6 +88,10 @@ You don't remember past chats, so the journal is the memory.
 | A more reliable call, or "how sure is it" | `ta-claude ensemble <T> -n 5` |
 | "Does it work", or a track record | `ta-claude backtest <T1,T2> --start ... --end ... --every 7` |
 | A view on something they hold | add `--portfolio <file.json>` to any of the above |
+| Rank FX setups now | `ta-claude fx-scan --json` (section 2.4) |
+| One-pair FX brief | `ta-claude fx-brief <PAIR> --json` (section 2.3) |
+| Price-only research plan | `ta-claude plan <T> --rating <rating> --json` (section 2.5) |
+| Compare strategy families | `ta-claude strategy-suite <PAIR> --start ... --end ... --json` (section 2.2) |
 | **"Live", "now", "update me", or "what's it doing", on a page or app they have open** | **Live mode, section 2** |
 
 If the market is unclear, run `ta-claude market <T>` first. It is free.
@@ -150,7 +155,7 @@ Live mode is read-only. Never click Buy, Sell or order buttons, never place or m
 - Use `report --plan` or `ensemble --plan` only when the user wants the deterministic plan attached to LLM research. If their directions disagree, call that out rather than choosing one silently.
 
 ## 3. Guardrails before spending money
-- **Cost:** a backtest costs about (tickers × dates) times a single report, and an ensemble costs about N times a single report. Before any backtest over 10 cells, any ensemble with n over 5, or any `live --full`, state the cost and get a yes.
+- **Cost:** a backtest costs about (tickers × dates) times a single report, and an ensemble costs about N times a single report. Both tiers now default to Opus 5.5, so each run costs more than with a cheaper analyst tier; mention `--quick` for a cheaper analyst model when cost matters. Before any backtest over 10 cells, any ensemble with n over 5, any `live --full` or any `--with-news`, state the cost and get a yes.
 - **Backtest dates:** every date must fall after the model cutoff, 2026-06-30 for the default models. If the user asks for earlier dates, explain the look-ahead problem. Use `--allow-contaminated` only if they insist, and label the results contaminated.
 - **Portfolio JSON:** the shape is `{"cash": 0, "currency": "USD", "positions": [{"ticker": "...", "quantity": 0, "average_price": 0}]}`. If the user describes their holdings in words, write the file, show it, and confirm it before running. An empty `positions` list means a flat book, which is not the same as passing no file.
 - **FX pegged pairs** (USDAED, USDSAR and similar): warn that signals will be noise before running.
