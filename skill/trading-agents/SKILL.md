@@ -56,13 +56,13 @@ This skill drives the `ta-claude` CLI from https://github.com/abisinan56-cmyk/tr
    - flags: divergence over 0.5%, Yahoo lag over 20 minutes, a page "as of" time more than 20 minutes old, ADX not on Yahoo.
 2. **News and macro:** 1–2 web searches, for example "<name> news <this month and year>". For stocks, add one search for latest earnings and valuation, which covers fundamentals. Crypto and FX have no fundamentals step.
 3. **Write the analysis yourself, in TradingAgents order.** Each role gets 1–3 lines, and each line cites the number or source it uses:
-   - **Market/technical analyst:** trend vs the 20/50/200-day averages, RSI, MACD histogram direction, Bollinger position, ATR, distance from the 52-week high and low.
+   - **Market/technical analyst:** the same measures `ta-claude plan` computes, so chat and CLI agree: 20/50-day regime (price above both and SMA20 above SMA50 with positive 20-day momentum = long; the mirror = short; else flat), plus the 200-day average, RSI-14, MACD histogram direction, Bollinger position, ATR-14, the last completed daily candle (bullish/bearish/doji; pin bar, engulfing or inside bar if present), and distance from the 52-week high and low.
    - **News/macro analyst:** dated items only, each with its source.
    - **Fundamentals analyst:** stocks only, from the search.
    - **Sentiment analyst:** skip it and say "no social data in chat mode".
    - **Bull vs bear:** the strongest case each way.
    - **Research manager:** which side wins, and why.
-   - **Trader:** the plan, with invalidation level, trigger level and a stop of about 1–1.5× ATR placed beyond the level plus a buffer.
+   - **Trader:** the plan, with invalidation level and trigger level, using the CLI's risk rule: stop 1.5× ATR-14 beyond the level (never below 0.3% or above 15% of price), target 2× the stop distance, and a model exposure ceiling of min(20%, 1% ÷ stop%) of equity. A flat regime means no entry/stop, not a smaller one.
    - **Risk team:** one line each from the aggressive, conservative and neutral views.
    - **Portfolio manager:** final **Rating: Buy / Overweight / Hold / Underweight / Sell**.
 4. **Reply format:** lead with the rating and price, then key levels, then the role lines, then sources, then: research only, not financial advice.
@@ -164,6 +164,7 @@ Live mode is read-only. Never click Buy, Sell or order buttons, never place or m
 - Add `--json` and parse the output.
 - Runs take minutes. Use a background command, and do not re-launch a run that is already in progress.
 - `report` records the first run and replays it afterwards. Re-running the same ticker, date and settings is free and identical (`"replayed": true`). Use `--no-replay` for a fresh sample. `live --full` never replays.
+- `report`, `ensemble`, `backtest` and `live --full` give every TradingAgents agent a deterministic technical snapshot (20/50 regime, last candle, RSI, MACD, ATR, Bollinger, support/resistance, and the model's reference levels), computed only from bars up to the analysis date. The Trader is asked to ground its levels in it and to flag, not reconcile, any conflict with tool output. If the agents' levels and `ta-claude plan` disagree, report both.
 
 ## 5. Report back (short)
 - **report:** the rating, a 3-line summary taken from the saved report's final decision, the path to `complete_report.html`, and any market notes.

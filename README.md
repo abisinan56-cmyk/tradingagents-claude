@@ -103,7 +103,9 @@ ta-claude strategy-suite EURUSD --start 2025-01-01 --end 2026-01-01 --cost-bps 1
 
 ## Deterministic trading-model research
 
-`plan` combines completed Yahoo daily closes with an optional TradingAgents rating. Its transparent 20/50-day trend and 20-day momentum rules produce a `long`, `short`, or `flat` research signal, reference entry/stop/target levels, a volatility-based risk distance, and a capped model-notional percentage. It writes a portable HTML dashboard to `~/.ta-claude/trade-plans` and never connects to a broker or sends an order.
+`plan` combines completed Yahoo daily closes with an optional TradingAgents rating. Its transparent 20/50-day trend and 20-day momentum rules produce a `long`, `short`, or `flat` research signal, reference entry/stop/target levels, a risk distance of 1.5× ATR-14 (floored at 0.3% and capped at 15% of price; 2× daily close volatility when OHLC is missing) with the target at twice that distance, and a capped model-notional percentage. It writes a portable HTML dashboard to `~/.ta-claude/trade-plans` and never connects to a broker or sends an order.
+
+**The agents see the same numbers.** `report`, `ensemble`, `backtest` and `live --full` run TradingAgents through a thin subclass that appends this deterministic snapshot (regime, last candle, RSI, MACD, ATR, Bollinger, support/resistance, reference levels) to the instrument context every agent reads, so upstream's Trader grounds its entry/stop in the same ATR and levels the CLI reports. The snapshot uses only bars up to the analysis date (safe in backtests), is recorded by replay like other data fetches, and is skipped silently if Yahoo is unavailable. The skill's chat mode follows the same indicator set and risk rule.
 
 Use `report --plan` or `ensemble --plan` to attach this independent plan to an LLM research result. The output keeps disagreement explicit rather than resolving it silently. If Yahoo history is unavailable, the completed LLM report still returns and its `trade_plan` field explains why the technical plan was unavailable.
 
