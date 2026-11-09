@@ -63,6 +63,7 @@ Rules:
   - `live.py`: screen vs Yahoo
   - `model.py`: deterministic trend, candle/indicator, risk, FX scan and brief analysis; `technical_snapshot` feeds the agents
   - `runner.py` also defines `TaClaudeGraph`, the upstream graph plus that snapshot in every agent prompt
+  - `llm.py`: makes upstream's structured agents use Anthropic `json_schema` output (applied when `runner` loads); bump `runner.PROMPT_VERSION` whenever prompts or LLM request shape change
   - `markets.py`: ticker classification
   - `cutoff.py`: look-ahead guard
   - `config.py`: Claude models and benchmarks

@@ -19,14 +19,17 @@ from tradingagents.portfolio import PortfolioContext
 
 from .config import HOME
 from .cutoff import check_dates
+from .llm import use_json_schema_structured_output
 from .markets import Market, backtest_analysts, classify
 from .replay import replay
+
+use_json_schema_structured_output()
 
 DIRECTION = {"Buy": 1, "Overweight": 1, "Hold": 0, "Underweight": -1, "Sell": -1}
 
 # Bump whenever ta-claude changes what the agents are prompted with (not upstream settings), so an
 # older recording is re-run and re-recorded rather than reported as a replay while missing the LLM cache.
-PROMPT_VERSION = "snapshot-v1"
+PROMPT_VERSION = "snapshot-v2-json-schema"
 
 
 class _SnapshotMixin:
