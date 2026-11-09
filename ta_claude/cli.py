@@ -118,6 +118,30 @@ def _main(argv: list[str] | None = None) -> int:
     rs.add_argument("--date", default=date.today().isoformat())
     rs.add_argument("--json", action="store_true", help="Print machine-readable output")
 
+    tm = sub.add_parser("timemachine", help="Replay a plan's stop/target race from the instrument's own bars (no API key)")
+    tm.add_argument("ticker")
+    tm.add_argument("--date", default=date.today().isoformat())
+    tm.add_argument("--rating", choices=["Buy", "Overweight", "Hold", "Underweight", "Sell", "REVIEW"])
+    tm.add_argument("--horizon", type=int, default=20, help="Trading days the plan is held")
+    tm.add_argument("--replays", type=int, default=10_000)
+    tm.add_argument("--seed", type=int, default=19)
+    tm.add_argument("--json", action="store_true", help="Print machine-readable output")
+
+    rk = sub.add_parser("risk", help="PASS/BLOCK a plan against your limits in ~/.ta-claude/risk.json (no API key)")
+    rk.add_argument("ticker")
+    rk.add_argument("--date", default=date.today().isoformat())
+    rk.add_argument("--rating", choices=["Buy", "Overweight", "Hold", "Underweight", "Sell", "REVIEW"])
+    rk.add_argument("--limits", help="Limits JSON (default ~/.ta-claude/risk.json; defaults apply if missing)")
+    rk.add_argument("--calendar", help="JSON file of upcoming high-impact events with hours_away (from your connector)")
+    rk.add_argument("--with-timemachine", action="store_true", help="Also run the time machine and use its verdict")
+    rk.add_argument("--record", action="store_true", help="On PASS, write the plan to the journal")
+    rk.add_argument("--note", default="", help="Journal note (with --record)")
+    rk.add_argument("--json", action="store_true", help="Print machine-readable output")
+
+    jn = sub.add_parser("journal", help="Score journaled plans against what happened, and summarise")
+    jn.add_argument("action", choices=["show", "score"], nargs="?", default="show")
+    jn.add_argument("--json", action="store_true", help="Print machine-readable output")
+
     args = ap.parse_args(argv)
 
     from .markets import classify
@@ -128,6 +152,9 @@ def _main(argv: list[str] | None = None) -> int:
 
     if args.cmd == "live":
         return _live(args)
+
+    if args.cmd in {"timemachine", "risk", "journal"}:
+        return _discipline(args)
 
     if args.cmd in {"plan", "strategy-backtest", "strategy-suite", "fx-scan", "fx-brief"}:
         from .model import (backtest_strategy_suite, backtest_trend, build_fx_decision_brief, build_trade_plan,
@@ -288,6 +315,84 @@ def _main(argv: list[str] | None = None) -> int:
         else:
             print(rep.render())
             print(f"Log: {log}")
+    print(DISCLAIMER, file=sys.stderr)
+    return 0
+
+
+def _plan_and_bars(ticker: str, as_of: str, rating: str | None):
+    from .model import build_trade_plan, fetch_daily_history
+    bars = fetch_daily_history(ticker, (date.fromisoformat(as_of) - timedelta(days=730)).isoformat(), as_of)
+    return build_trade_plan(ticker, bars, rating), bars
+
+
+def _discipline(args) -> int:
+    """timemachine, risk and journal: the plan-discipline commands, all keyless."""
+    from . import journal
+    if args.cmd == "journal":
+        out = journal.score() if args.action == "score" else journal.summary(journal._load(journal.JOURNAL))
+        if args.json:
+            print(json.dumps(out, indent=2))
+        else:
+            print(f"Journal: {out['entries']} entries, {out['scored']} scored · target first {out['target_first']} · "
+                  f"stop first {out['stop_first']} · neither {out['neither']} · average R {out['average_r']}")
+            if out.get("note"):
+                print(f"Note: {out['note']}")
+        print(DISCLAIMER, file=sys.stderr)
+        return 0
+
+    plan, bars = _plan_and_bars(args.ticker, args.date, args.rating)
+    tm = None
+    if args.cmd == "timemachine" or args.with_timemachine:
+        from .timemachine import run_time_machine
+        if plan.action == "flat":
+            print(f"{plan.ticker} plan is flat on {plan.as_of}: no stop or target to replay.", file=sys.stderr)
+            if args.cmd == "timemachine":
+                return 2
+        else:
+            horizon = getattr(args, "horizon", 20)
+            tm = asdict(run_time_machine(plan.ticker, bars, plan.entry_reference, plan.stop_reference,
+                                         plan.target_reference, plan.action, horizon,
+                                         getattr(args, "replays", 10_000), getattr(args, "seed", 19)))
+    if args.cmd == "timemachine":
+        if args.json:
+            print(json.dumps(tm, indent=2))
+        else:
+            print(f"{tm['ticker']} {tm['action']} · entry {tm['entry']} stop {tm['stop']} target {tm['target']} "
+                  f"({tm['reward_risk']}R) · {tm['replays']} replays over {tm['horizon_days']} days, seed {tm['seed']}")
+            print(f"Target first {tm['target_first_pct']}% · stop first {tm['stop_first_pct']}% · "
+                  f"neither {tm['neither_pct']}% · average R {tm['average_r']}")
+            h = tm["history"]
+            print(f"History, same rule on real bars: fired {h['fired']}, target first {h['target_first']}, "
+                  f"stop first {h['stop_first']}, neither {h['neither']}")
+            print(f"Verdict: {tm['verdict']}")
+            for note in tm["notes"]:
+                print(f"Note: {note}")
+        print(DISCLAIMER, file=sys.stderr)
+        return 0
+
+    from .risk import check_plan, load_limits
+    limits = load_limits(args.limits)
+    calendar = json.loads(Path(args.calendar).read_text(encoding="utf-8")) if args.calendar else None
+    verdict = check_plan(asdict(plan), limits, journal.today_entries(), calendar, tm)
+    out = {**asdict(verdict), "status": verdict.status, "plan": asdict(plan), "time_machine": tm}
+    if args.record and verdict.passed:
+        out["journal_entry"] = journal.record(asdict(plan), {"status": verdict.status,
+                                                             "max_loss_at_stop": verdict.max_loss_at_stop},
+                                              args.note, units=verdict.position_units)
+    if args.json:
+        print(json.dumps(out, indent=2))
+    else:
+        print(f"{verdict.status}: {plan.ticker} {plan.action} · entry {plan.entry_reference} stop {plan.stop_reference} "
+              f"target {plan.target_reference}")
+        if verdict.passed:
+            print(f"Size within limits: {verdict.position_units} units · loss at stop "
+                  f"{verdict.max_loss_at_stop} {limits['account_currency']}")
+        for r in verdict.reasons:
+            print(f"Blocked: {r}")
+        for w in verdict.warnings:
+            print(f"Note: {w}")
+        if out.get("journal_entry"):
+            print(f"Journaled as {out['journal_entry']['id']}")
     print(DISCLAIMER, file=sys.stderr)
     return 0
 

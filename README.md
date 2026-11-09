@@ -121,6 +121,25 @@ Use `report --plan` or `ensemble --plan` to attach this independent plan to an L
 
 `strategy-backtest` simulates the same long/short/flat 20/50 trend rule. A signal uses a completed close and is filled at the following bar open; turnover costs are charged at each position change. Ending positions are marked at the last close without a hypothetical exit cost. The buy-and-hold comparison is measured from the first requested open to the last requested close, before costs. It reports strategy and buy-and-hold returns, drawdown, annualised statistics, and turnover events. It is independent of the LLM training cutoff because it makes no model calls. These outputs are historical research simulations, not investment recommendations or evidence of future performance.
 
+## Look before you risk: time machine, risk check, journal
+
+Three keyless commands adapted from Jake Schincariol's [day-trader-skill](https://github.com/Jakeschincariol/day-trader-skill) (MIT), rebuilt for daily bars and both sides of a trade. Nothing here places an order.
+
+```bash
+ta-claude timemachine AUDUSD                      # replay the plan's stop/target race from the pair's own bars
+ta-claude risk AUDUSD --with-timemachine          # PASS with a size, or BLOCK with every reason
+ta-claude risk AUDUSD --with-timemachine --record --note "..."   # journal a plan that passed
+ta-claude journal score                           # score finished plans against what really happened
+```
+
+**`timemachine`** takes the `plan` for a ticker (entry, 1.5×ATR stop, 2R target) and replays the next 20 trading days 10,000 times, each day drawn at random from the instrument's own last 250 daily bars (open/high/low/close as ratios), checking the stop before the target; a bar that touches both counts as the stop. It also re-runs the same 20/50 rule with the same stop and target on every past day it fired, with real bars. It prints target first %, stop first %, neither %, average R, the history counts and one verdict: *close to a coin flip*, *close to break-even*, *leans toward* or *strongly toward* the target or the stop, judged against the break-even rate for the plan's reward:risk (33% of decided replays at 2R). Seed 19 by default, so the numbers repeat on any machine. It is a simulation built from recent bars, not a prediction: it cannot contain a surprise those bars never saw.
+
+**`risk`** checks the plan against your limits in `~/.ta-claude/risk.json` (copy `examples/risk.example.json`; defaults apply if the file is missing): budget, max loss per trade (1%), daily loss (3%), trades per day (3), reward:risk (≥1.5), position cap (20%), a required stop, a blocked list, no new exposure within 24 hours of a high-impact event (pass the connector's calendar as `--calendar events.json`), and the time-machine verdict. It prints **PASS** with the units that fit and the loss at the stop, or **BLOCK** with every reason. A PASS is a rules check, not a recommendation, and the skill never loosens a limit to pass a plan.
+
+**`journal`** keeps every plan you recorded in `~/.ta-claude/journal.jsonl`; `journal score` later checks each finished one against the real bars that followed and summarises target-first, stop-first and average R. Under 30 scored entries it says the sample is too small to call the rule an edge.
+
+On 9 Nov 2026 the first live run blocked `fx-scan`'s own top candidate: AUD/USD short replayed stop-first 68% vs target-first 25%, and the rule's real history on the pair was 257 stops to 62 targets.
+
 ## Free data sources (evaluated, not integrated in code)
 
 The CLI uses Yahoo only (no key). Richer data comes through the connectors in your Claude desktop app (Firecrawl, Twelve Data, Claude in Chrome), never through API keys in this repo. The table below records free sources checked in November 2026, for reference only; free tiers change.
@@ -187,4 +206,4 @@ To install in Claude Code, copy the folder to `~/.claude/skills/trading-agents/`
 
 ## Upstream
 
-This project is pinned to TradingAgents commit `9fa1196` (Apache-2.0). Bump the pin in `pyproject.toml` deliberately, then re-run `pytest`.
+This project is pinned to TradingAgents commit `9fa1196` (Apache-2.0). Bump the pin in `pyproject.toml` deliberately, then re-run `pytest`. The time machine, risk check and journal are adapted from [day-trader-skill](https://github.com/Jakeschincariol/day-trader-skill) by Jake Schincariol (MIT).
