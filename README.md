@@ -4,6 +4,14 @@
 
 > Research tool only. Not financial, investment or trading advice.
 
+## No API key needed
+
+Everything works without an API key or paid service. The CLI gathers deterministic data from Yahoo (prices, technical snapshot, plan, FX brief, dated headlines) in seconds. Claude, in the Claude desktop app or Claude Code on your own subscription, then writes the TradingAgents analysis (analysts, bull/bear, trader, risk team, portfolio manager), enriching it only with the connectors you have enabled: **Firecrawl** for full articles and the economic calendar, **Twelve Data** for a live quote, and **Claude in Chrome** or web search as fallbacks.
+
+```bash
+ta-claude research EURUSD          # the pack Claude analyses; also what `report` returns without a key
+```
+
 ## What it fixes
 
 | Upstream limitation | Fix here |
@@ -29,7 +37,7 @@
 
 FX pairs get Yahoo's `=X` suffix automatically. Pegged pairs such as USDAED or USDSAR are flagged, because they barely move. Judge FX calls on raw return rather than on alpha.
 
-Before running, check a ticker's classification with `ta-claude market EMAAR.AE,EURUSD`. Yahoo covers DFM stocks under `.AE` (EMAAR.AE was verified, with 5-minute intraday data), but has **no ADX stocks** (FAB and Aldar were checked). ADX tickers are therefore refused by `report`, `ensemble` and `backtest`. Live mode still gives a screen-based read for them.
+Before running, check a ticker's classification with `ta-claude market EMAAR.AE,EURUSD`. Yahoo covers DFM stocks under `.AE` (EMAAR.AE was verified, with 5-minute intraday data), but has **no ADX stocks** (FAB and Aldar were checked). ADX tickers are therefore refused by `research` (and the optional paid commands). Live mode still gives a screen-based read for them.
 
 ## Use it from Claude Code (easiest)
 
@@ -37,9 +45,9 @@ Open this folder in Claude Code: the Code tab in the Claude desktop app, or `cla
 
 | Command | What it does |
 |---|---|
-| `/analyze NVDA` | Rating for a ticker or pair. Add `ensemble` for a vote with confidence. |
+| `/analyze NVDA` | Keyless research pack, enriched with your connectors, written up as a TradingAgents rating with a confidence line. |
 | `/live` | Reads the stock page or app you have open and checks it against Yahoo. Add `full` for a fresh analysis. |
-| `/backtest NVDA,EURUSD 2026-07-06 2026-10-26` | Look-ahead-safe backtest. |
+| `/backtest EURUSD 2025-01-01 2026-01-01` | Strategy track record vs buy-and-hold (`strategy-suite`). |
 
 Plain requests work too. `CLAUDE.md` and the skill tell Claude Code how to handle them. `.claude/settings.json` pre-approves the ta-claude commands and blocks Claude from reading your `.env`.
 
@@ -57,7 +65,7 @@ The script:
 2. installs ta-claude and runs the offline tests;
 3. installs the Claude Code skill to `~/.claude/skills/trading-agents`;
 4. puts `ta-claude` on your PATH;
-5. creates `.env`, where you paste your `ANTHROPIC_API_KEY`.
+5. creates `.env` for optional settings. No API key is needed.
 
 `ta-claude` reads that `.env` from any folder.
 
@@ -65,40 +73,34 @@ To install by hand instead: `python -m venv .venv && .venv/bin/pip install -e ".
 
 ## Use
 
+Every command below is keyless and free.
+
 ```bash
-# 1. Single report (recorded; re-running replays it exactly)
-ta-claude report NVDA --date 2026-11-03
+# 1. Research pack for one ticker or pair (Claude writes the analysis from it)
+ta-claude research NVDA
+ta-claude research EURUSD --date 2026-11-03 --json
 
-# 2. Ensemble with confidence
-ta-claude ensemble EMAAR.AE -n 5
-
-# 3. Backtest (dates must be after the model cutoff, 2026-06-30)
-ta-claude backtest NVDA,RELIANCE.NS,EURUSD --start 2026-07-06 --end 2026-10-26 --every 7 --cost-bps 10
-
-# 4. Portfolio-aware (works with report, ensemble or backtest)
-ta-claude report NVDA --portfolio examples/portfolio.example.json
-
-# 5. Live check of a price read off your screen (seconds, no API cost)
+# 2. Live check of a price read off your screen (seconds)
 ta-claude live EMAAR.AE --price 12.30 --source tradingview.com
-ta-claude live EMAAR.AE --quote quote.json --full   # plus a fresh analysis (minutes, costs API)
+ta-claude live EMAAR.AE --quote quote.json --full   # plus a fresh research pack
 
-# 6. Deterministic technical model and risk template (no LLM/API key)
+# 3. Deterministic technical model and risk template
 ta-claude plan NVDA --rating Buy --json
 
-# 7. Deterministic 20/50 trend-model backtest (no LLM/API key)
+# 4. Deterministic 20/50 trend-model backtest
 ta-claude strategy-backtest NVDA --start 2025-01-01 --end 2026-01-01 --cost-bps 10 --json
 
-# 8. Rank current major-FX research setups; fresh news research for its top directional candidate costs API usage
-ta-claude fx-scan --json
+# 5. Rank current major-FX research setups, with headlines for the top directional candidate
 ta-claude fx-scan --with-news --json
 
-# 9. Structured FX decision-support brief with scenarios, risks, event checklist, and portfolio overlap
-ta-claude fx-brief EURUSD --portfolio examples/portfolio.example.json --json
-ta-claude fx-brief EURUSD --with-news --json  # fresh market/news research costs API usage
+# 6. Structured FX decision-support brief with scenarios, event checklist, portfolio overlap and headlines
+ta-claude fx-brief EURUSD --portfolio examples/portfolio.example.json --with-news --json
 
-# 10. Compare four documented signal families under the same costs and execution assumptions
+# 7. Compare four documented signal families under the same costs and execution assumptions
 ta-claude strategy-suite EURUSD --start 2025-01-01 --end 2026-01-01 --cost-bps 10 --json
 ```
+
+`report`, `ensemble` and `backtest` are the original paid multi-agent pipeline. They stay in the code but are not needed: without a key, `report` and `ensemble` return the keyless research pack, and `backtest` points to `strategy-suite`.
 
 
 ## Deterministic trading-model research
@@ -113,15 +115,15 @@ Use `report --plan` or `ensemble --plan` to attach this independent plan to an L
 
 `strategy-suite` compares four intentionally limited daily-bar models: 20/50 trend, Bollinger/RSI mean reversion, 20-bar breakout, and RSI momentum. A signal formed after the close is filled at the following bar's open; positions earn overnight gaps and turnover costs are charged at each change. The simulation uses 100% unlevered notional, has no spread, slippage or financing, and measures drawdown at daily closes. The in-sample comparison cannot identify a future winner.
 
-`fx-brief` turns one pair’s technical plan into a structured decision-support brief: market regime, bullish/bearish and no-trade scenarios, central-bank/inflation/jobs/policy event checklist, transparent conservative/balanced/aggressive risk assumptions, and declared FX portfolio-overlap exposure. It now includes completed daily **OHLC candle analysis** (body/wicks, doji, pin bars, engulfing and inside-bar detection), 20/50-day trend, RSI-14, MACD/signal/histogram, ATR-14, Bollinger bands, and 20-bar support/resistance. Yahoo daily bars newer than 48 hours are conservatively excluded; the latest accepted bar may be older than a trading session and bars older than four calendar days are flagged for review (weekends/holidays can explain the warning). OHLC is adjusted consistently. Portfolio FX legs use signed base units and supplied average price, not current valuation, and are listed separately without netting. The brief does not use a live economic-calendar, bid/ask, liquidity, financing, tax, leverage, or personal-suitability feed; all omissions are returned as warnings. Add `--with-news` only when a fresh, paid multi-agent news research run is wanted.
+`fx-brief` turns one pair’s technical plan into a structured decision-support brief: market regime, bullish/bearish and no-trade scenarios, central-bank/inflation/jobs/policy event checklist, transparent conservative/balanced/aggressive risk assumptions, and declared FX portfolio-overlap exposure. It now includes completed daily **OHLC candle analysis** (body/wicks, doji, pin bars, engulfing and inside-bar detection), 20/50-day trend, RSI-14, MACD/signal/histogram, ATR-14, Bollinger bands, and 20-bar support/resistance. Yahoo daily bars newer than 48 hours are conservatively excluded; the latest accepted bar may be older than a trading session and bars older than four calendar days are flagged for review (weekends/holidays can explain the warning). OHLC is adjusted consistently. Portfolio FX legs use signed base units and supplied average price, not current valuation, and are listed separately without netting. The brief does not use a live economic-calendar, bid/ask, liquidity, financing, tax, leverage, or personal-suitability feed; all omissions are returned as warnings. `--with-news` attaches dated Yahoo headlines at no cost; in Claude desktop, the Firecrawl connector adds full articles and this week's calendar.
 
-`fx-scan` ranks the default major pairs (EUR/USD, GBP/USD, USD/JPY, USD/CHF, USD/CAD, AUD/USD and NZD/USD) by the deterministic trend-strength score, with data timestamps, reference risk levels, and data availability warnings. `fx-scan --with-news` then runs fresh multi-agent market and news research for the highest-ranked directional candidate only; it requires `ANTHROPIC_API_KEY`, costs an API run, and reports the sources available to the underlying research pipeline. Neither mode claims exhaustive news coverage or treats a rank as an instruction to trade.
+`fx-scan` ranks the default major pairs (EUR/USD, GBP/USD, USD/JPY, USD/CHF, USD/CAD, AUD/USD and NZD/USD) by the deterministic trend-strength score, with data timestamps, reference risk levels, and data availability warnings. `fx-scan --with-news` then attaches dated Yahoo headlines (with URLs) for the highest-ranked directional candidate at no cost, for Claude to enrich with its connectors. Neither mode claims exhaustive news coverage or treats a rank as an instruction to trade.
 
 `strategy-backtest` simulates the same long/short/flat 20/50 trend rule. A signal uses a completed close and is filled at the following bar open; turnover costs are charged at each position change. Ending positions are marked at the last close without a hypothetical exit cost. The buy-and-hold comparison is measured from the first requested open to the last requested close, before costs. It reports strategy and buy-and-hold returns, drawdown, annualised statistics, and turnover events. It is independent of the LLM training cutoff because it makes no model calls. These outputs are historical research simulations, not investment recommendations or evidence of future performance.
 
-## Free data sources (evaluated, not yet integrated)
+## Free data sources (evaluated, not integrated in code)
 
-The FX commands currently use Yahoo daily bars only. These free sources were checked in November 2026 as candidates for later integration; free tiers change, so re-check before relying on them.
+The CLI uses Yahoo only (no key). Richer data comes through the connectors in your Claude desktop app (Firecrawl, Twelve Data, Claude in Chrome), never through API keys in this repo. The table below records free sources checked in November 2026, for reference only; free tiers change.
 
 | Source | Free tier | Would improve | Notes |
 |---|---|---|---|
@@ -132,7 +134,7 @@ The FX commands currently use Yahoo daily bars only. These free sources were che
 | Alpha Vantage | 25 requests/day | — | Too small for regular scans |
 | Finnhub | Free key, ~60 calls/minute | Economic calendar and FX candles are advertised | Whether these are on the free plan was not confirmed |
 
-Any keyed source should read its key from your local `.env`, keep Yahoo as the fallback, and never place orders.
+This repo stays keyless: use these through Claude desktop connectors where one exists, keep Yahoo as the base, and never place orders.
 
 ## Live mode
 
@@ -162,11 +164,7 @@ Results, replay files and the memory log are stored in `~/.ta-claude`. Set `TA_C
 
 ## Cost guide
 
-Every run makes many LLM calls across about 10 agents. Expect:
-- an ensemble of N to cost about N times a single report;
-- a backtest to cost about (tickers × dates) times a single report.
-
-Start with one ticker and `--every 14`. Check your Anthropic console after the first run before scaling up.
+The keyless commands cost nothing. Connector use is the only limit: free Firecrawl and Twelve Data quotas are small, so the skill uses about 2–3 scrapes and one quote per analysis and falls back to Claude in Chrome or web search when a quota runs out.
 
 ## Limits that remain
 
@@ -182,8 +180,8 @@ Start with one ticker and `--every 14`. Check your Anthropic console after the f
 ## Claude skill
 
 `skill/trading-agents/SKILL.md` lets Claude run this project for you from plain requests.
-- **Claude Code on your computer:** full mode. It runs the CLI and reads your open stock pages for live mode.
-- **claude.ai (no API key):** fast chat mode. Claude runs the TradingAgents roles itself: prices and indicators come from Yahoo through Claude in Chrome in one batched call, and news comes from web search. There are no screenshots, about 4 tool calls in all, and the result is labelled as single-model.
+- **Claude desktop / Claude Code:** keyless CLI mode. It runs `ta-claude research`, enriches the pack with your connectors (Firecrawl, Twelve Data, Claude in Chrome), writes the TradingAgents roles, and reads your open stock pages for live mode.
+- **claude.ai (no shell):** fast chat mode. Claude runs the TradingAgents roles itself: prices and indicators come from Yahoo through Claude in Chrome in one batched call, and news comes from web search. There are no screenshots, about 4 tool calls in all, and the result is labelled as single-model.
 
 To install in Claude Code, copy the folder to `~/.claude/skills/trading-agents/`. On claude.ai, upload the zipped folder under Settings → Capabilities → Skills.
 

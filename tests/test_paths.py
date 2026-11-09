@@ -146,9 +146,18 @@ def test_cli_paths(monkeypatch, capsys, tmp_path):
     assert cli.main(["backtest", "NVDA", "--start", "2026-07-06", "--end", "2026-07-20", "--json"]) == 0
     assert json.loads(capsys.readouterr().out)["log"] == "/log"
     assert cli.main(["market", "EURUSD"]) == 0
+    capsys.readouterr()
     monkeypatch.delenv("ANTHROPIC_API_KEY")
     monkeypatch.setattr(cli, "load_dotenv", lambda *a, **k: None)
-    assert cli.main(["report", "NVDA"]) == 2
+    # No key: report falls back to the keyless research pack; the agent backtest points to keyless tools.
+    monkeypatch.setattr(cli, "_research_pack", lambda t, d: {"mode": "keyless", "ticker": "NVDA", "market": "us",
+                                                             "as_of": d, "technical_snapshot": None, "news": [],
+                                                             "warnings": []})
+    assert cli.main(["report", "NVDA", "--json"]) == 0
+    out = json.loads(capsys.readouterr().out)
+    assert out["mode"] == "keyless" and "No API key set" in out["warnings"][0]
+    assert cli.main(["backtest", "NVDA", "--start", "2026-07-06", "--end", "2026-07-20"]) == 2
+    assert "strategy-suite" in capsys.readouterr().err
 
 
 def test_skill_frontmatter():

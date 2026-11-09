@@ -60,11 +60,10 @@ case ":$PATH:" in
      say "ta-claude is in ~/.local/bin; open a new Terminal window to use it";;
 esac
 
-# 6. .env
+# 6. .env (optional settings only; no API key is needed)
 if [ ! -f .env ]; then
   cp .env.example .env
-  say "Created .env. Open it and paste your ANTHROPIC_API_KEY:"
-  echo "  open -e $PWD/.env"
+  say "Created .env for optional settings. No API key is needed."
 else
   say ".env already exists; left unchanged"
 fi

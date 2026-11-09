@@ -70,7 +70,8 @@ def _main(argv: list[str] | None = None) -> int:
     src.add_argument("--quote", help="JSON file: symbol, price, source, captured_at, screen_time, change_pct, currency")
     src.add_argument("--price", type=float, help="Screen price, if no quote file")
     lv.add_argument("--source", default="", help="Where the price was read (URL or app)")
-    lv.add_argument("--full", action="store_true", help="Also run a fresh multi-agent analysis (minutes, costs API)")
+    lv.add_argument("--full", action="store_true",
+                    help="Also attach a fresh analysis (keyless research pack; full agent run only if a key is set)")
     _common(lv)
 
     m = sub.add_parser("market", help="Show how a ticker is classified, without running anything")
@@ -94,14 +95,15 @@ def _main(argv: list[str] | None = None) -> int:
     fx.add_argument("--pairs", default=",".join(("EURUSD", "GBPUSD", "USDJPY", "USDCHF", "USDCAD", "AUDUSD", "NZDUSD")),
                     help="Comma-separated Yahoo-style FX pairs")
     fx.add_argument("--with-news", action="store_true",
-                    help="Run fresh multi-agent market/news research for the highest-ranked directional candidate (uses API)")
+                    help="Attach news for the top directional candidate (keyless headlines; full agent run only if a key is set)")
     fx.add_argument("--json", action="store_true", help="Print machine-readable output")
 
     brief = sub.add_parser("fx-brief", help="Structured FX decision-support research brief (no LLM calls by default)")
     brief.add_argument("ticker", help="FX pair, e.g. EURUSD")
     brief.add_argument("--portfolio", help="Optional portfolio JSON for declared FX currency-overlap checks")
     brief.add_argument("--rating", choices=["Buy", "Overweight", "Hold", "Underweight", "Sell", "REVIEW"])
-    brief.add_argument("--with-news", action="store_true", help="Attach fresh multi-agent market/news research (uses API)")
+    brief.add_argument("--with-news", action="store_true",
+                       help="Attach news (keyless headlines; full agent run only if a key is set)")
     brief.add_argument("--json", action="store_true", help="Print machine-readable output")
 
     suite = sub.add_parser("strategy-suite", help="Compare documented trend, mean-reversion, breakout and RSI strategies")
@@ -110,6 +112,11 @@ def _main(argv: list[str] | None = None) -> int:
     suite.add_argument("--end", required=True)
     suite.add_argument("--cost-bps", type=float, default=10.0)
     suite.add_argument("--json", action="store_true", help="Print machine-readable output")
+
+    rs = sub.add_parser("research", help="Keyless research pack for the Claude session to analyse (no API key)")
+    rs.add_argument("ticker")
+    rs.add_argument("--date", default=date.today().isoformat())
+    rs.add_argument("--json", action="store_true", help="Print machine-readable output")
 
     args = ap.parse_args(argv)
 
@@ -141,12 +148,13 @@ def _main(argv: list[str] | None = None) -> int:
             bars = fetch_daily_history(args.ticker, (today - timedelta(days=730)).isoformat(), today.isoformat())
             out = asdict(build_fx_decision_brief(args.ticker, bars, args.portfolio, args.rating))
             if args.with_news:
-                if not os.getenv("ANTHROPIC_API_KEY"):
-                    print("ANTHROPIC_API_KEY is not set; --with-news needs it.", file=sys.stderr)
-                    return 2
-                from .config import build_config
-                from . import runner
-                out["news_research"] = runner.run_report(out["pair"], today.isoformat(), build_config(), use_replay=False)
+                if _has_key():
+                    from .config import build_config
+                    from . import runner
+                    out["news_research"] = runner.run_report(out["pair"], today.isoformat(), build_config(),
+                                                             use_replay=False)
+                else:
+                    out["news_research"] = _keyless_news(out["pair"])
             if args.json:
                 print(json.dumps(out, indent=2))
             else:
@@ -163,17 +171,15 @@ def _main(argv: list[str] | None = None) -> int:
             out = asdict(scan)
             directional = next((candidate for candidate in scan.candidates if candidate["action"] != "flat"), None)
             if args.with_news:
-                if not os.getenv("ANTHROPIC_API_KEY"):
-                    print("ANTHROPIC_API_KEY is not set; --with-news needs it.", file=sys.stderr)
-                    return 2
                 if directional is None:
                     out["news_research"] = {"status": "skipped", "reason": "No directional technical candidate."}
-                else:
+                elif _has_key():
                     from .config import build_config
                     from . import runner
-                    cfg = build_config()
-                    out["news_research"] = runner.run_report(directional["ticker"], date.today().isoformat(), cfg,
-                                                              use_replay=False)
+                    out["news_research"] = runner.run_report(directional["ticker"], date.today().isoformat(),
+                                                             build_config(), use_replay=False)
+                else:
+                    out["news_research"] = _keyless_news(directional["ticker"])
             if args.json:
                 print(json.dumps(out, indent=2))
             else:
@@ -183,7 +189,8 @@ def _main(argv: list[str] | None = None) -> int:
                 print(f"Reference entry {candidate['entry_reference']} · stop {candidate['stop_reference']} · "
                       f"target {candidate['target_reference']} · model maximum notional {candidate['model_max_notional_pct']}%")
                 if args.with_news:
-                    print(f"Fresh news research: {out['news_research'].get('report_dir', out['news_research'].get('status'))}")
+                    news = out["news_research"]
+                    print(f"News: {news.get('report_dir') or news.get('status') or str(len(news.get('news', []))) + ' headlines'}")
                 for warning in scan.warnings:
                     print(f"Note: {warning}")
         elif args.cmd in {"plan", "strategy-backtest"}:
@@ -212,8 +219,27 @@ def _main(argv: list[str] | None = None) -> int:
         print(DISCLAIMER, file=sys.stderr)
         return 0
 
-    if not os.getenv("ANTHROPIC_API_KEY"):
-        print("ANTHROPIC_API_KEY is not set. Copy .env.example to .env and add your key.", file=sys.stderr)
+    if args.cmd == "research" or (args.cmd in {"report", "ensemble"} and not _has_key()):
+        # No key: the CLI gathers the data and the Claude session writes the agent analysis.
+        pack = _research_pack(args.ticker, args.date)
+        if args.cmd != "research":
+            pack["warnings"].insert(0, f"No API key set: '{args.cmd}' returned the keyless research pack; "
+                                       "the Claude session writes the TradingAgents analysis from it.")
+        if args.json:
+            print(json.dumps(pack, indent=2))
+        else:
+            print(f"{pack['ticker']} ({pack['market']}) keyless research pack · data through {pack['as_of']}")
+            print(pack["technical_snapshot"] or "Technical snapshot unavailable.")
+            for item in pack["news"]:
+                print(f"News {item['date']}: {item['title']} ({item['source']})")
+            for w in pack["warnings"]:
+                print(f"Note: {w}")
+        print(DISCLAIMER, file=sys.stderr)
+        return 0
+
+    if args.cmd == "backtest" and not _has_key():
+        print("The agent backtest needs the optional key. For a keyless track record use "
+              "`ta-claude strategy-suite <T> --start ... --end ...` or `strategy-backtest`.", file=sys.stderr)
         return 2
 
     from .config import build_config
@@ -266,6 +292,26 @@ def _main(argv: list[str] | None = None) -> int:
     return 0
 
 
+def _has_key() -> bool:
+    """The Anthropic key is optional; without it every command runs in keyless mode."""
+    return bool(os.getenv("ANTHROPIC_API_KEY"))
+
+
+def _research_pack(ticker: str, as_of: str) -> dict:
+    from .research import build_research_pack
+    return build_research_pack(ticker, as_of)
+
+
+def _keyless_news(ticker: str) -> dict:
+    from .research import CONNECTOR_STEPS, calendar_currencies, fetch_news
+    try:
+        news = fetch_news(ticker, date.today().isoformat())
+    except Exception as exc:
+        return {"mode": "keyless", "news": [], "warnings": [f"Yahoo news unavailable: {exc}"]}
+    return {"mode": "keyless", "ticker": ticker, "news": news, "calendar_currencies": calendar_currencies(ticker),
+            "connector_steps": CONNECTOR_STEPS}
+
+
 def _research_plan(ticker: str, rating: str) -> dict:
     """Return a best-effort technical plan without hiding a completed LLM report."""
     from .model import build_trade_plan, fetch_daily_history, write_trade_plan_dashboard
@@ -291,12 +337,12 @@ def _live(args) -> int:
     cfg = build_config(args.deep, args.quick, args.debate_rounds, args.risk_rounds, effort=args.effort)
     fresh = None
     if args.full:
-        if not os.getenv("ANTHROPIC_API_KEY"):
-            print("ANTHROPIC_API_KEY is not set; --full needs it.", file=sys.stderr)
-            return 2
-        analysts = args.analysts.split(",") if args.analysts else None
-        fresh = runner.run_report(market.symbol, date.today().isoformat(), cfg, analysts,
-                                  args.portfolio, use_replay=False)
+        if _has_key():
+            analysts = args.analysts.split(",") if args.analysts else None
+            fresh = runner.run_report(market.symbol, date.today().isoformat(), cfg, analysts,
+                                      args.portfolio, use_replay=False)
+        else:
+            fresh = _research_pack(market.symbol, date.today().isoformat())
     intraday = yahoo_intraday(market.symbol) if market.analysts else None
     check = assess(quote, intraday, latest_rating(market.symbol, cfg["memory_log_path"]))
     out = {**asdict(check), "fresh_run": fresh}
@@ -308,7 +354,9 @@ def _live(args) -> int:
             print(f"Yahoo last {check.yahoo['last']} at {check.yahoo['last_bar']} · "
                   f"screen vs Yahoo {check.screen_vs_yahoo_pct:+.2f}% · Yahoo lag "
                   f"{check.yahoo_lag_minutes} min · session {check.session_move_pct}%")
-        if fresh:
+        if fresh and fresh.get("mode") == "keyless":
+            print(f"Fresh keyless research pack: data through {fresh['as_of']}, {len(fresh['news'])} headlines")
+        elif fresh:
             print(f"Fresh rating: {fresh['rating']} · report {fresh['report_dir']}")
         elif check.last_rating:
             print(f"Last rating: {check.last_rating['rating']} on {check.last_rating['date']}")

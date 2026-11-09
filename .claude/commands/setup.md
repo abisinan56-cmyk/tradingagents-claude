@@ -7,5 +7,5 @@ Set up this project, following the "First run" section of CLAUDE.md:
    - the test result;
    - whether the skill was installed;
    - the Yahoo check.
-2. If `.env` has no key yet, tell me to run `open -e .env` and paste my ANTHROPIC_API_KEY. Do not read `.env`.
+2. No API key is needed; do not ask for one or read `.env`.
 3. Finish with `ta-claude market EMAAR.AE,EURUSD` as a smoke test, using whichever CLI path works.
