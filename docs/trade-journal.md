@@ -1,0 +1,41 @@
+# Trade journal and market lessons
+
+Snapshot of the claude.ai Project doc `claude/trade-journal.md` (the live copy stays in the Project; this file is the versioned backup, last synced 14 Nov 2026). Demo account (USD, 1:400 leverage, equity about $10.95k). Risk rule: **1% per trade** (about $110). Judge results in **R** (P/L ÷ amount risked), not dollars. Research only, not financial advice.
+
+## Trades
+
+| # | Date (Dubai) | Pair | Side | Entry | Stop | Target | Size | Exit | P/L | R | Setup |
+|---|---|---|---|---|---|---|---|---|---|---|---|
+| 1 | 5 Nov 18:30 | AUD/USD | Short | ~0.7001 | 0.7075 (74 pips) | 0.6900 | 8 lots ($80/pip; risk ≈ $5,920) | ~0.6990 (inferred: $872 ÷ $80 ≈ 11 pips) | **+$872** | **+0.15** | Trend-aligned short at the 50-day average. Closed after about 11 of the 101 planned pips |
+| 2 | 5 Nov 20:04 | GBP/USD | Long | 1.34730 at market (plan: limit at 1.3440) | 1.33501 (123 pips) | 1.36002 | 0.05 lots ($0.50/pip; risk ≈ $61.45) | 1.33501, stop hit on the NFP drop, 6 Nov | **−$61.45** (+$0.35 commission) | **−1.0** | Uptrend pullback, entered without the pullback. Broke below the 200-day, so the setup failed |
+| 3 | 6 Nov 18:19 | USD/CAD | Long | **1.41186 at market** (plan: limit at 1.4070) | 1.39850 (134 pips) | 1.42900 (171 pips, the 20-day high), set 6 Nov 21:57. Earlier: 1.42200, then 1.42290 (digit slip) | 0.04 lots ($0.28/pip; risk ≈ $37.70 incl. commission, 0.35%) | **1.41291**, closed by hand (market order) 9 Nov 21:47, after 3 days. Price never came near the stop or the target | **+$2.62** net (+$2.95 gross, −$0.05 swap, −$0.28 commission) | **+0.07** | Uptrend plus post-NFP dollar strength, entered at the top of the NFP spike. 10.5 of the 171 target pips taken |
+| 4 | 6 Nov 21:26 | EUR/JPY | Short | **176.403 at market** (plan: limit at 176.70) | 177.250 (85 pips; moved from 177.150) | 175.800 (60 pips) | 0.05 lots ($0.32/pip; risk ≈ $27.45 incl. commission) | **176.290**, closed by hand 6 Nov 21:55 (29 min in) | **+$3.20** net (+$3.55 gross, −$0.35 commission) | **+0.12** | Daily and hourly downtrend, non-USD. 11 of the 60 target pips taken |
+| 5 | 10 Nov 00:13 | AUD/USD | Short | **0.69274 at market** (plan: limit at 0.6985, the 50-day average) | 0.70350 (107.6 pips; plan was 0.7035 from a 0.6985 entry, 50 pips) | 0.68600 (67.4 pips, the 6 Nov low) | 0.10 lots ($1/pip; risk ≈ $108.30 incl. $0.70 commission, ~1.0%; plan was 0.21 lots) | **0.68600, target hit** 10 Nov 19:48 (about 19.5 hours in). Left alone, stop and target untouched | **+$66.62** net (+$67.40 gross, −$0.08 swap, −$0.70 commission) | **+0.62** | Downtrend below the 50-day (0.6985) and 200-day, entered mid-bounce about 61 pips below the planned level. Reward:risk at entry was 0.62, so the full target paid only 0.62R. Fed Dec hike bias |
+| 6 | 10 Nov 20:01 | EUR/USD | Short | **1.11585 at market** (plan: limit at 1.1215, 56 pips higher) | 1.12650 (106.5 pips; plan 1.1265 from a 1.1215 entry, 50 pips). **Moved to 1.10550 on 12 Nov at 21:09** | 1.10000 (158.5 pips, round number below the 52-week low of 1.1107) | 0.09 lots ($0.90/pip; risk ≈ $96.50 incl. $0.63 commission, 0.9%; plan was 0.21 lots standard or 0.64 lots "big") | **1.10550**, "stop loss" hit 12 Nov 21:09 (2 days in). The stop was set on top of the live price (1.10551), so it was a hand close in effect. Price was 55 pips from the target | **+$94.08** net (+$93.15 gross, +$1.56 swap, −$0.63 commission) | **+0.98** | Dollar rally day (EUR −0.6%, AUD −1.1%), 5 pips above the 52-week low, below the 50-day (1.1233) and 200-day (1.1476). Entered after a move of about 1 ATR, so it chased. Fed Dec hike bias. Reward:risk at entry was 1.49. 103 of the 158.5 target pips taken |
+| 7 | 12 Nov 21:13 | EUR/USD | Short | **1.10561 at market**, 2 minutes after #6 closed (plan: limit at 1.1105, the retest of the broken 52-week low, 49 pips higher) | 1.11600 (104 pips), **moved to 1.11300 on 12 Nov 21:18** (74 pips, above the broken low 1.1107 by about 0.4 ATR) | 1.09500 (106 pips; plan was 1.0950) | 0.09 lots ($0.90/pip; risk ≈ $67.10 after the stop move, $94.20 before; plan was 0.20 lots) | **1.10227**, closed by hand (market order) 14 Nov 00:30, after about 51 hours, at the planned Friday deadline about 90 minutes before the FX close. Price was 73 pips from the target and never threatened the stop | **+$29.82** net (+$30.06 gross, +$0.39 swap, −$0.63 commission) | **+0.44** (on the $67.10 risk; +0.32R on the original $94.20) | Re-entry in the same direction and pair as #6, at a fresh 52-week low (1.10527), with no pullback. Dollar-strength theme, Fed Dec hike bias. Entered after the same move that closed #6, so it chased. 33 of the 106 target pips taken. Stop moved to 1.1130 improved reward:risk from 1.02 to 1.42 |
+
+## Running stats
+- Closed: 7. Wins: 6. Losses: 1. Net: **+$1,006.89**.
+- **Average R: +0.20** ((+0.15 − 1.0 + 0.12 + 0.07 + 0.62 + 0.98 + 0.44) ÷ 7).
+- **Pattern so far:** three wins were closed by hand at about 10–11 pips (+0.07R to +0.15R). The three trades held longer (#5, #6, #7) paid +0.62R, +0.98R and +0.44R. The one loss was a full −1R. Only #5 reached its planned target.
+- Open: 0.
+- Entries: 6 of 7 trades were taken at market instead of the planned limit (#2, #3, #4, #5, #6, #7). Each one cut reward:risk below the plan.
+- Too few to judge an edge. Need 30–50 trades at a fixed 1% risk.
+
+## Lessons
+1. **Size first.** Trade #1 was 8 lots, about 59% of the account at the stop. Size = (equity × 1%) ÷ (stop pips × pip value). When the entry moves, the stop distance moves, so recompute the size.
+2. **Trend plus momentum plus entry at a level:** 4 trades so far (#1, #5, #6, #7), all wins, all small. Keep testing; that's not evidence yet.
+3. **Fast moves can be pair-specific.** On 5 Nov AUD fell while the dollar was flat or weaker elsewhere.
+4. **Don't chase.** After a move of 1 ATR or more, wait for a pullback with a limit order.
+5. **Event risk is real.** Trade #2 was stopped out by the NFP move. Don't hold a fresh trade through NFP, CPI or central-bank decisions.
+6. **Data limits.** Twelve Data free plan: 8 credits a minute, no multi-symbol requests. Screen via Yahoo when Chrome is reachable.
+7. **Execute the plan as written. Broken 6 times (#2–#7).** Each market entry kept the planned target and stop but moved the entry, so reward:risk fell (#5: 2.5 planned, 0.62 actual; #6: 4.3 planned, 1.49 actual; #7: 2.8 planned, 1.02 actual, repaired to 1.42 by moving the stop). Use the limit order. If price doesn't come back, there's no trade.
+8. **Judge in R, not dollars.** +$1,007 net. In R the record is +0.15, −1.0, +0.12, +0.07, +0.62, +0.98, +0.44: average +0.20.
+9. **Don't cut winners short. Broken 4 times (#1, #4, #3, #6).** Leave the stop and target alone once set. At +1R, move the stop to **entry**, not to the live price. Close by hand only at a planned deadline (for example the weekend), not on feel. #7 was closed at the planned Friday deadline, which is allowed.
+10. **Friday positions carry weekend gap risk.** A position still open at the Friday close can gap past its stop on Monday's open. #7 was closed before the weekend, banking +0.44R. Whether holding with a break-even stop would have paid more is unknown.
+11. **Stops go beyond the level, plus a buffer.** Put the stop past the level by about 0.3–0.5 of an ATR.
+12. **Check order levels digit by digit.** Trade #3's target was first set to 1.42290 instead of 1.42900. Read the order back before confirming.
+13. **A small swing win is mostly noise.** #3 risked 134 pips for a 171-pip target and kept 10.5 pips. Use a stop sized to the exit you will actually take, or take the planned exit.
+14. **A stop at the live price is a market close.** On #6 the stop was set to 1.10550 with price at 1.10551, so the trade closed at once. Trail at a distance (for example 1 ATR) so the trade has room to reach the target.
+15. **A re-entry after a win is a new trade, not a continuation.** Apply the same plan: limit order, stop past the level, size for the stop. Re-entering the same pair and direction also doubles the exposure to one idea.
+16. **Fixing a bad entry by moving the stop works.** #7's stop moved from 1.1160 to 1.1130, just above the broken low, cutting risk from $94 to $67 and lifting reward:risk from 1.02 to 1.42. The stop belongs at the level that invalidates the idea.
